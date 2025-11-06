@@ -167,12 +167,17 @@ export async function getBalance() {
       console.log('[Bybit] Moedas encontradas:', coins.length);
 
       coins.forEach((coin) => {
+        // availableToWithdraw pode estar vazio, usar walletBalance como fallback
+        const available = coin.availableToWithdraw && coin.availableToWithdraw !== '' 
+          ? parseFloat(coin.availableToWithdraw) 
+          : parseFloat(coin.walletBalance);
+        
         balance[coin.coin] = {
-          available: parseFloat(coin.availableToWithdraw),
+          available: available,
           total: parseFloat(coin.walletBalance),
           equity: parseFloat(coin.equity),
         };
-        console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${coin.availableToWithdraw}`);
+        console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${available}`);
       });
 
       return balance;
