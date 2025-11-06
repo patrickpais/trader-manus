@@ -1,307 +1,494 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
+/**
+ * Trade Database - MySQL Version
+ * Sistema de persistência de dados para machine learning
+ */
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+dotenv.config();
 
-// Criar banco de dados
-const dbPath = path.join(__dirname, '..', 'trading.db');
-const db = new Database(dbPath);
-
-// Habilitar WAL mode para melhor performance
-db.pragma('journal_mode = WAL');
-
-// Schema do banco de dados
-const schema = `
--- Tabela principal de trades
-CREATE TABLE IF NOT EXISTS trades (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  symbol TEXT NOT NULL,
-  side TEXT NOT NULL,
-  
-  -- Entrada
-  entry_price REAL NOT NULL,
-  entry_time TEXT NOT NULL,
-  entry_confidence INTEGER,
-  entry_score INTEGER,
-  entry_reasons TEXT,
-  entry_rsi REAL,
-  entry_macd REAL,
-  entry_macd_signal REAL,
-  entry_macd_histogram REAL,
-  entry_bb_upper REAL,
-  entry_bb_middle REAL,
-  entry_bb_lower REAL,
-  entry_volume_ratio REAL,
-  entry_trend TEXT,
-  entry_volatility REAL,
-  
-  -- Condições de mercado na entrada
-  market_volatility_24h REAL,
-  market_volume_24h REAL,
-  market_price_change_1h REAL,
-  market_price_change_24h REAL,
-  
-  -- Configuração do trade
-  quantity REAL NOT NULL,
-  leverage INTEGER NOT NULL,
-  stop_loss REAL,
-  take_profit REAL,
-  
-  -- Durante o trade
-  max_profit REAL DEFAULT 0,
-  max_profit_time TEXT,
-  max_loss REAL DEFAULT 0,
-  max_loss_time TEXT,
-  duration_minutes INTEGER,
-  
-  -- Saída
-  exit_price REAL,
-  exit_time TEXT,
-  exit_reason TEXT,
-  exit_rsi REAL,
-  exit_macd REAL,
-  exit_trend TEXT,
-  
-  -- Resultado
-  pnl REAL,
-  pnl_percent REAL,
-  status TEXT NOT NULL DEFAULT 'open',
-  
-  -- Metadados
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- Tabela de snapshots (movimentação durante o trade)
-CREATE TABLE IF NOT EXISTS market_snapshots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  trade_id INTEGER NOT NULL,
-  timestamp TEXT NOT NULL,
-  price REAL NOT NULL,
-  rsi REAL,
-  macd REAL,
-  volume_ratio REAL,
-  pnl REAL,
-  pnl_percent REAL,
-  FOREIGN KEY (trade_id) REFERENCES trades(id) ON DELETE CASCADE
-);
-
--- Índices para performance
-CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
-CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
-CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time);
-CREATE INDEX IF NOT EXISTS idx_trades_pnl ON trades(pnl);
-CREATE INDEX IF NOT EXISTS idx_snapshots_trade_id ON market_snapshots(trade_id);
-CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON market_snapshots(timestamp);
-`;
-
-// Executar schema
-db.exec(schema);
-
-console.log('[Database] Banco de dados inicializado:', dbPath);
-
-// ==================== FUNÇÕES DE TRADES ====================
+let pool = null;
 
 /**
- * Criar novo trade
+ * Inicializa o pool de conexões MySQL
  */
-export function createTrade(tradeData) {
-  const stmt = db.prepare(`
-    INSERT INTO trades (
-      symbol, side, entry_price, entry_time, entry_confidence, entry_score, entry_reasons,
-      entry_rsi, entry_macd, entry_macd_signal, entry_macd_histogram,
-      entry_bb_upper, entry_bb_middle, entry_bb_lower, entry_volume_ratio,
-      entry_trend, entry_volatility, market_volatility_24h, market_volume_24h,
-      market_price_change_1h, market_price_change_24h, quantity, leverage,
-      stop_loss, take_profit, status
-    ) VALUES (
-      @symbol, @side, @entry_price, @entry_time, @entry_confidence, @entry_score, @entry_reasons,
-      @entry_rsi, @entry_macd, @entry_macd_signal, @entry_macd_histogram,
-      @entry_bb_upper, @entry_bb_middle, @entry_bb_lower, @entry_volume_ratio,
-      @entry_trend, @entry_volatility, @market_volatility_24h, @market_volume_24h,
-      @market_price_change_1h, @market_price_change_24h, @quantity, @leverage,
-      @stop_loss, @take_profit, @status
-    )
-  `);
+function initDatabase() {
+  if (pool) return pool;
   
-  const result = stmt.run(tradeData);
-  return result.lastInsertRowid;
+  try {
+    pool = mysql.createPool({
+      host: 'gateway02.us-east-1.prod.aws.tidbcloud.com',
+      port: 4000,
+      user: 'i4eWuXmqdJD31yc.root',
+      password: 'v4Q7qqU8oYA5g46PKkCW',
+      database: 'Cp5JEc3tFKKzfsKUJ75GgH',
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      ssl: {
+        rejectUnauthorized: true
+      }
+    });
+    
+    console.log('[Database] Pool de conexões MySQL criado');
+    return pool;
+  } catch (error) {
+    console.error('[Database] Erro ao criar pool MySQL:', error);
+    throw error;
+  }
 }
 
 /**
- * Atualizar trade
+ * Cria as tabelas necessárias
  */
-export function updateTrade(tradeId, updates) {
-  const fields = Object.keys(updates).map(key => `${key} = @${key}`).join(', ');
-  const stmt = db.prepare(`
-    UPDATE trades 
-    SET ${fields}, updated_at = CURRENT_TIMESTAMP
-    WHERE id = @id
-  `);
+async function createTables() {
+  const db = initDatabase();
   
-  stmt.run({ id: tradeId, ...updates });
+  try {
+    // Tabela de trades
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS trades (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        side VARCHAR(10) NOT NULL,
+        entry_price DECIMAL(20, 8) NOT NULL,
+        exit_price DECIMAL(20, 8),
+        quantity DECIMAL(20, 8) NOT NULL,
+        leverage INT,
+        stop_loss DECIMAL(20, 8),
+        take_profit DECIMAL(20, 8),
+        
+        -- Indicadores de entrada
+        entry_rsi DECIMAL(10, 4),
+        entry_macd DECIMAL(20, 10),
+        entry_macd_signal DECIMAL(20, 10),
+        entry_volume_ratio DECIMAL(10, 4),
+        entry_trend VARCHAR(20),
+        entry_volatility DECIMAL(20, 10),
+        entry_confidence DECIMAL(10, 4),
+        entry_score DECIMAL(10, 4),
+        entry_reasons TEXT,
+        
+        -- Indicadores de saída
+        exit_rsi DECIMAL(10, 4),
+        exit_macd DECIMAL(20, 10),
+        exit_macd_signal DECIMAL(20, 10),
+        exit_volume_ratio DECIMAL(10, 4),
+        
+        -- Resultado
+        pnl DECIMAL(20, 8),
+        pnl_percent DECIMAL(10, 4),
+        exit_reason VARCHAR(50),
+        
+        -- Tracking durante o trade
+        max_profit DECIMAL(20, 8),
+        max_loss DECIMAL(20, 8),
+        price_history TEXT,
+        
+        -- Timestamps
+        opened_at DATETIME NOT NULL,
+        closed_at DATETIME,
+        duration_minutes INT,
+        
+        -- Índices para queries rápidas
+        INDEX idx_symbol (symbol),
+        INDEX idx_opened_at (opened_at),
+        INDEX idx_pnl (pnl),
+        INDEX idx_confidence (entry_confidence)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    
+    // Tabela de snapshots de mercado
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS market_snapshots (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        trade_id INT,
+        symbol VARCHAR(20) NOT NULL,
+        timestamp DATETIME NOT NULL,
+        price DECIMAL(20, 8) NOT NULL,
+        rsi DECIMAL(10, 4),
+        macd DECIMAL(20, 10),
+        volume_ratio DECIMAL(10, 4),
+        pnl DECIMAL(20, 8),
+        
+        FOREIGN KEY (trade_id) REFERENCES trades(id) ON DELETE CASCADE,
+        INDEX idx_trade_id (trade_id),
+        INDEX idx_timestamp (timestamp)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    
+    console.log('[Database] ✅ Tabelas criadas/verificadas com sucesso');
+  } catch (error) {
+    console.error('[Database] Erro ao criar tabelas:', error);
+    throw error;
+  }
 }
 
 /**
- * Buscar trade por ID
+ * Insere um novo trade
  */
-export function getTradeById(tradeId) {
-  const stmt = db.prepare('SELECT * FROM trades WHERE id = ?');
-  return stmt.get(tradeId);
-}
-
-/**
- * Buscar trades abertos
- */
-export function getOpenTrades() {
-  const stmt = db.prepare('SELECT * FROM trades WHERE status = ? ORDER BY entry_time DESC');
-  return stmt.all('open');
-}
-
-/**
- * Buscar trades fechados
- */
-export function getClosedTrades(limit = 100) {
-  const stmt = db.prepare('SELECT * FROM trades WHERE status = ? ORDER BY exit_time DESC LIMIT ?');
-  return stmt.all('closed', limit);
-}
-
-/**
- * Buscar todos os trades
- */
-export function getAllTrades(limit = 1000) {
-  const stmt = db.prepare('SELECT * FROM trades ORDER BY entry_time DESC LIMIT ?');
-  return stmt.all(limit);
-}
-
-/**
- * Buscar trades por símbolo
- */
-export function getTradesBySymbol(symbol) {
-  const stmt = db.prepare('SELECT * FROM trades WHERE symbol = ? ORDER BY entry_time DESC');
-  return stmt.all(symbol);
-}
-
-// ==================== FUNÇÕES DE SNAPSHOTS ====================
-
-/**
- * Adicionar snapshot
- */
-export function addSnapshot(snapshotData) {
-  const stmt = db.prepare(`
-    INSERT INTO market_snapshots (
-      trade_id, timestamp, price, rsi, macd, volume_ratio, pnl, pnl_percent
-    ) VALUES (
-      @trade_id, @timestamp, @price, @rsi, @macd, @volume_ratio, @pnl, @pnl_percent
-    )
-  `);
+async function insertTrade(tradeData) {
+  const db = initDatabase();
   
-  stmt.run(snapshotData);
+  try {
+    const [result] = await db.execute(
+      `INSERT INTO trades (
+        symbol, side, entry_price, quantity, leverage, stop_loss, take_profit,
+        entry_rsi, entry_macd, entry_macd_signal, entry_volume_ratio,
+        entry_trend, entry_volatility, entry_confidence, entry_score, entry_reasons,
+        opened_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tradeData.symbol,
+        tradeData.side,
+        tradeData.entry_price,
+        tradeData.quantity,
+        tradeData.leverage || 0,
+        tradeData.stop_loss || 0,
+        tradeData.take_profit || 0,
+        tradeData.entry_rsi || null,
+        tradeData.entry_macd || null,
+        tradeData.entry_macd_signal || null,
+        tradeData.entry_volume_ratio || null,
+        tradeData.entry_trend || null,
+        tradeData.entry_volatility || null,
+        tradeData.entry_confidence || null,
+        tradeData.entry_score || null,
+        tradeData.entry_reasons || null,
+        tradeData.opened_at || new Date()
+      ]
+    );
+    
+    console.log(`[Database] ✅ Trade inserido: ${tradeData.symbol} (ID: ${result.insertId})`);
+    return result.insertId;
+  } catch (error) {
+    console.error('[Database] Erro ao inserir trade:', error);
+    throw error;
+  }
 }
 
 /**
- * Buscar snapshots de um trade
+ * Atualiza dados de saída de um trade
  */
-export function getSnapshotsByTradeId(tradeId) {
-  const stmt = db.prepare('SELECT * FROM market_snapshots WHERE trade_id = ? ORDER BY timestamp ASC');
-  return stmt.all(tradeId);
-}
-
-// ==================== FUNÇÕES DE ANÁLISE ====================
-
-/**
- * Calcular estatísticas gerais
- */
-export function getStatistics() {
-  const stmt = db.prepare(`
-    SELECT 
-      COUNT(*) as total_trades,
-      SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_trades,
-      SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_trades,
-      SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
-      SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
-      SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as total_profit,
-      SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as total_loss,
-      SUM(pnl) as net_pnl,
-      AVG(pnl) as avg_pnl,
-      AVG(pnl_percent) as avg_pnl_percent,
-      AVG(duration_minutes) as avg_duration
-    FROM trades
-    WHERE status = 'closed'
-  `);
+async function updateTradeExit(symbol, openedAt, exitData) {
+  const db = initDatabase();
   
-  return stmt.get();
+  try {
+    const [result] = await db.execute(
+      `UPDATE trades SET
+        exit_price = ?,
+        exit_rsi = ?,
+        exit_macd = ?,
+        exit_macd_signal = ?,
+        exit_volume_ratio = ?,
+        pnl = ?,
+        pnl_percent = ?,
+        exit_reason = ?,
+        duration_minutes = ?,
+        closed_at = NOW()
+      WHERE symbol = ? AND opened_at = ? AND closed_at IS NULL`,
+      [
+        exitData.exit_price,
+        exitData.exit_rsi || null,
+        exitData.exit_macd || null,
+        exitData.exit_macd_signal || null,
+        exitData.exit_volume_ratio || null,
+        exitData.pnl,
+        exitData.pnl_percent,
+        exitData.exit_reason,
+        exitData.duration_minutes,
+        symbol,
+        openedAt
+      ]
+    );
+    
+    if (result.affectedRows > 0) {
+      console.log(`[Database] ✅ Trade atualizado: ${symbol}`);
+    } else {
+      console.log(`[Database] ⚠️ Trade não encontrado para atualização: ${symbol}`);
+    }
+    
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('[Database] Erro ao atualizar trade:', error);
+    throw error;
+  }
 }
 
 /**
- * Buscar padrões vencedores
+ * Insere snapshot de mercado
  */
-export function getWinningPatterns() {
-  const stmt = db.prepare(`
-    SELECT 
-      AVG(entry_rsi) as avg_rsi,
-      AVG(entry_macd) as avg_macd,
-      AVG(entry_volume_ratio) as avg_volume_ratio,
-      entry_trend,
-      AVG(entry_confidence) as avg_confidence,
-      COUNT(*) as count,
-      AVG(pnl) as avg_pnl,
-      AVG(pnl_percent) as avg_pnl_percent
-    FROM trades
-    WHERE status = 'closed' AND pnl > 0
-    GROUP BY entry_trend
-    ORDER BY avg_pnl DESC
-  `);
+async function insertMarketSnapshot(snapshotData) {
+  const db = initDatabase();
   
-  return stmt.all();
+  try {
+    await db.execute(
+      `INSERT INTO market_snapshots (
+        trade_id, symbol, timestamp, price, rsi, macd, volume_ratio, pnl
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        snapshotData.trade_id,
+        snapshotData.symbol,
+        snapshotData.timestamp || new Date(),
+        snapshotData.price,
+        snapshotData.rsi || null,
+        snapshotData.macd || null,
+        snapshotData.volume_ratio || null,
+        snapshotData.pnl || null
+      ]
+    );
+  } catch (error) {
+    console.error('[Database] Erro ao inserir snapshot:', error);
+    throw error;
+  }
 }
 
 /**
- * Buscar padrões perdedores
+ * Busca trades vencedores (PnL > 0)
  */
-export function getLosingPatterns() {
-  const stmt = db.prepare(`
-    SELECT 
-      AVG(entry_rsi) as avg_rsi,
-      AVG(entry_macd) as avg_macd,
-      AVG(entry_volume_ratio) as avg_volume_ratio,
-      entry_trend,
-      AVG(entry_confidence) as avg_confidence,
-      COUNT(*) as count,
-      AVG(pnl) as avg_pnl,
-      AVG(pnl_percent) as avg_pnl_percent
-    FROM trades
-    WHERE status = 'closed' AND pnl < 0
-    GROUP BY entry_trend
-    ORDER BY avg_pnl ASC
-  `);
+async function getWinningTrades() {
+  const db = initDatabase();
   
-  return stmt.all();
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades WHERE pnl > 0 ORDER BY opened_at DESC'
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar trades vencedores:', error);
+    return [];
+  }
 }
 
 /**
- * Análise por símbolo
+ * Busca trades perdedores (PnL <= 0)
  */
-export function getSymbolAnalysis() {
-  const stmt = db.prepare(`
-    SELECT 
-      symbol,
-      COUNT(*) as total_trades,
-      SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
-      SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
-      ROUND(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as win_rate,
-      SUM(pnl) as total_pnl,
-      AVG(pnl) as avg_pnl,
-      AVG(duration_minutes) as avg_duration
-    FROM trades
-    WHERE status = 'closed'
-    GROUP BY symbol
-    ORDER BY total_pnl DESC
-  `);
+async function getLosingTrades() {
+  const db = initDatabase();
   
-  return stmt.all();
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades WHERE pnl <= 0 ORDER BY opened_at DESC'
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar trades perdedores:', error);
+    return [];
+  }
 }
 
-export default db;
+/**
+ * Busca trades recentes (últimos N dias)
+ */
+async function getRecentTrades(days = 30) {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades WHERE opened_at >= DATE_SUB(NOW(), INTERVAL ? DAY) ORDER BY opened_at DESC',
+      [days]
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar trades recentes:', error);
+    return [];
+  }
+}
+
+/**
+ * Busca trades por símbolo
+ */
+async function getTradesBySymbol(symbol) {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades WHERE symbol = ? ORDER BY opened_at DESC',
+      [symbol]
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar trades por símbolo:', error);
+    return [];
+  }
+}
+
+/**
+ * Busca trades por confiança mínima
+ */
+async function getTradesByConfidence(minConfidence) {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades WHERE entry_confidence >= ? ORDER BY opened_at DESC',
+      [minConfidence]
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar trades por confiança:', error);
+    return [];
+  }
+}
+
+/**
+ * Busca trades vencedores com alta confiança
+ */
+async function getHighConfidenceWinners() {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades WHERE pnl > 0 AND entry_confidence > 80 ORDER BY opened_at DESC'
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar high confidence winners:', error);
+    return [];
+  }
+}
+
+/**
+ * Calcula métricas médias
+ */
+async function getAverageMetrics() {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(`
+      SELECT
+        AVG(entry_rsi) as avg_rsi,
+        AVG(entry_macd) as avg_macd,
+        AVG(entry_volume_ratio) as avg_volume_ratio,
+        AVG(entry_confidence) as avg_confidence,
+        AVG(pnl) as avg_pnl,
+        AVG(pnl_percent) as avg_pnl_percent,
+        AVG(duration_minutes) as avg_duration
+      FROM trades
+      WHERE closed_at IS NOT NULL
+    `);
+    return rows[0] || {};
+  } catch (error) {
+    console.error('[Database] Erro ao calcular métricas médias:', error);
+    return {};
+  }
+}
+
+/**
+ * Busca snapshots de um trade específico
+ */
+async function getMarketSnapshots(symbol, openedAt) {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      `SELECT s.* FROM market_snapshots s
+       JOIN trades t ON s.trade_id = t.id
+       WHERE t.symbol = ? AND t.opened_at = ?
+       ORDER BY s.timestamp ASC`,
+      [symbol, openedAt]
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar snapshots:', error);
+    return [];
+  }
+}
+
+/**
+ * Conta total de trades
+ */
+async function getTotalTrades() {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute('SELECT COUNT(*) as total FROM trades');
+    return rows[0].total;
+  } catch (error) {
+    console.error('[Database] Erro ao contar trades:', error);
+    return 0;
+  }
+}
+
+/**
+ * Calcula win rate
+ */
+async function getWinRate() {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins
+      FROM trades
+      WHERE closed_at IS NOT NULL
+    `);
+    
+    const { total, wins } = rows[0];
+    return total > 0 ? (wins / total) * 100 : 0;
+  } catch (error) {
+    console.error('[Database] Erro ao calcular win rate:', error);
+    return 0;
+  }
+}
+
+/**
+ * Calcula PnL médio
+ */
+async function getAveragePnL() {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      'SELECT AVG(pnl) as avg_pnl FROM trades WHERE closed_at IS NOT NULL'
+    );
+    return rows[0].avg_pnl || 0;
+  } catch (error) {
+    console.error('[Database] Erro ao calcular PnL médio:', error);
+    return 0;
+  }
+}
+
+/**
+ * Busca todos os trades (para dashboard)
+ */
+async function getAllTrades(limit = 100) {
+  const db = initDatabase();
+  
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM trades ORDER BY opened_at DESC LIMIT ?',
+      [limit]
+    );
+    return rows;
+  } catch (error) {
+    console.error('[Database] Erro ao buscar todos os trades:', error);
+    return [];
+  }
+}
+
+// Inicializa o banco ao carregar o módulo
+initDatabase();
+
+export {
+  initDatabase,
+  createTables,
+  insertTrade,
+  updateTradeExit,
+  insertMarketSnapshot,
+  getWinningTrades,
+  getLosingTrades,
+  getRecentTrades,
+  getTradesBySymbol,
+  getTradesByConfidence,
+  getHighConfidenceWinners,
+  getAverageMetrics,
+  getMarketSnapshots,
+  getTotalTrades,
+  getWinRate,
+  getAveragePnL,
+  getAllTrades,
+};
