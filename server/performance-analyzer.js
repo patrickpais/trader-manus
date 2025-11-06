@@ -26,7 +26,7 @@ export class PerformanceAnalyzer {
             stop_loss_percent: 5,
             take_profit_percent: 15,
             max_trades_per_day: 50,
-            risk_per_trade: 2
+            risk_per_trade: 5
           },
           coin_performance: {}
         };
