@@ -2,7 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
-const patternAnalyzer = require('./pattern-analyzer');
+import * as patternAnalyzer from './pattern-analyzer.js';
 
 export class PerformanceAnalyzer {
   constructor() {

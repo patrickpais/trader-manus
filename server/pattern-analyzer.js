@@ -3,7 +3,7 @@
  * Usa dados do banco SQLite para identificar o que funciona e o que não funciona
  */
 
-const tradeDB = require('./trade-database');
+import * as tradeDB from './database.js';
 
 /**
  * Analisa padrões de trades vencedores vs perdedores
@@ -374,7 +374,7 @@ function getPerformanceStats() {
   }
 }
 
-module.exports = {
+export {
   analyzeWinningPatterns,
   getPerformanceStats,
 };
