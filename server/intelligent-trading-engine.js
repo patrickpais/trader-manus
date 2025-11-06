@@ -7,6 +7,7 @@ import {
   openPosition,
   closePosition,
   getOpenPositions,
+  getTradeHistory,
   setLeverage,
 } from './bybit.js';
 import { generateUltraTradingSignal, calculateUltraSLTP } from './ultra-algorithm.js';
@@ -178,7 +179,6 @@ async function executeTrade(signal, balance, parameters) {
  */
 async function syncClosedTrades() {
   try {
-    const { getTradeHistory } = await import('./bybit.js');
     const recentTrades = await getTradeHistory(null, 100);
     
     // Agrupa trades por símbolo e orderId para identificar fechamentos
