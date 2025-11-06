@@ -137,13 +137,23 @@ export async function getPrice(symbol) {
  */
 export async function getBalance() {
   try {
+    console.log('[Bybit] Buscando saldo da conta UNIFIED...');
     const response = await authenticatedRequest('GET', '/v5/account/wallet-balance', {
       accountType: 'UNIFIED',
     });
 
+    console.log('[Bybit] Resposta da API:', JSON.stringify(response, null, 2));
+
     if (response.retCode === 0) {
+      if (!response.result || !response.result.list || response.result.list.length === 0) {
+        console.log('[Bybit] Nenhuma conta encontrada na resposta');
+        return {};
+      }
+
       const coins = response.result.list[0].coin;
       const balance = {};
+
+      console.log('[Bybit] Moedas encontradas:', coins.length);
 
       coins.forEach((coin) => {
         balance[coin.coin] = {
@@ -151,14 +161,16 @@ export async function getBalance() {
           total: parseFloat(coin.walletBalance),
           equity: parseFloat(coin.equity),
         };
+        console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${coin.availableToWithdraw}`);
       });
 
       return balance;
     }
 
+    console.log('[Bybit] Erro na resposta:', response.retMsg);
     return {};
   } catch (error) {
-    console.error('Error fetching balance:', error.message);
+    console.error('[Bybit] Error fetching balance:', error.response?.data || error.message);
     return {};
   }
 }
