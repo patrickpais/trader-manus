@@ -541,7 +541,7 @@
       if (authToken && currentUser) {
         showDashboard();
         updateDashboard();
-        setInterval(updateDashboard, 5000);
+        setInterval(updateDashboard, 2000);
       } else {
         showLogin();
       }
@@ -614,7 +614,7 @@
         setTimeout(() => {
           showDashboard();
           updateDashboard();
-          setInterval(updateDashboard, 5000);
+          setInterval(updateDashboard, 2000);
         }, 1000);
       } catch (error) {
         showError('Erro ao conectar com servidor: ' + error.message);
