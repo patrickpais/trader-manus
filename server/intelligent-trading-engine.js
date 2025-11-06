@@ -183,38 +183,54 @@ async function syncClosedTrades() {
     const recentTrades = await getTradeHistory(null, 100);
     console.log(`[Sync] Trades recebidos da Bybit: ${recentTrades.length}`);
     
-    // Agrupa trades por símbolo e orderId para identificar fechamentos
-    const tradesByOrder = {};
-    console.log('[Sync] Agrupando trades por orderId...');
+    // Agrupa trades por símbolo (não por orderId)
+    const tradesBySymbol = {};
+    console.log('[Sync] Agrupando trades por símbolo...');
     for (const trade of recentTrades) {
-      if (!tradesByOrder[trade.orderId]) {
-        tradesByOrder[trade.orderId] = [];
+      if (!tradesBySymbol[trade.symbol]) {
+        tradesBySymbol[trade.symbol] = [];
       }
-      tradesByOrder[trade.orderId].push(trade);
+      tradesBySymbol[trade.symbol].push(trade);
     }
     
-    // Processa cada ordem para detectar fechamentos
-    console.log(`[Sync] Processando ${Object.keys(tradesByOrder).length} ordens...`);
-    for (const [orderId, trades] of Object.entries(tradesByOrder)) {
-      // Se tem trades de abertura e fechamento, é uma posição fechada
-      const hasBuy = trades.some(t => t.side === 'Buy');
-      const hasSell = trades.some(t => t.side === 'Sell');
+    // Processa cada símbolo para detectar fechamentos
+    console.log(`[Sync] Processando ${Object.keys(tradesBySymbol).length} símbolos...`);
+    for (const [symbol, trades] of Object.entries(tradesBySymbol)) {
+      // Ordena por timestamp
+      trades.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Procura pares de Buy/Sell
+      const buyTrades = trades.filter(t => t.side === 'Buy');
+      const sellTrades = trades.filter(t => t.side === 'Sell');
+      
+      console.log(`[Sync] ${symbol}: ${buyTrades.length} Buys, ${sellTrades.length} Sells`);
+      
+      // Se tem pelo menos 1 buy e 1 sell, é uma posição fechada
+      const hasBuy = buyTrades.length > 0;
+      const hasSell = sellTrades.length > 0;
       
       if (hasBuy && hasSell) {
-        const symbol = trades[0].symbol;
-        console.log(`[Sync] Ordem ${orderId} - ${symbol}: Posição fechada detectada`);
+        console.log(`[Sync] ${symbol}: Posição fechada detectada`);
         
-        // Verifica se já está registrado no histórico local
+        // Pega o último buy e o último sell
+        const lastBuy = buyTrades[buyTrades.length - 1];
+        const lastSell = sellTrades[sellTrades.length - 1];
+        
+        // Verifica se já está registrado no histórico local (janela de 5 minutos)
         const existsInLocal = tradingState.trades.some(
           t => t.symbol === symbol && t.status === 'closed' && 
-               Math.abs(new Date(t.closed_at).getTime() - trades[trades.length - 1].timestamp) < 60000
+               Math.abs(new Date(t.closed_at).getTime() - lastSell.timestamp) < 300000
         );
+        
+        console.log(`[Sync] ${symbol} já existe no histórico local? ${existsInLocal}`);
         
         if (!existsInLocal) {
           console.log(`[Sync] Trade ${symbol} não encontrado no histórico local, adicionando...`);
-          // Calcula PnL total da ordem
-          const totalPnl = trades.reduce((sum, t) => sum + t.pnl, 0);
+          
+          // Calcula PnL total (soma todos os PnLs)
+          const totalPnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
           console.log(`[Sync] PnL total calculado: $${totalPnl.toFixed(2)}`);
+          console.log(`[Sync] Detalhes: Buy @ ${lastBuy.price}, Sell @ ${lastSell.price}`);
           
           // Encontra trade aberto correspondente
           const openTradeIndex = tradingState.trades.findIndex(
@@ -226,18 +242,18 @@ async function syncClosedTrades() {
             const openTrade = tradingState.trades[openTradeIndex];
             tradingState.trades[openTradeIndex] = {
               ...openTrade,
-              exitPrice: trades[trades.length - 1].price,
+              exitPrice: lastSell.price,
               pnl: totalPnl,
               pnlPercent: (totalPnl / (openTrade.entryPrice * openTrade.quantity)) * 100,
-              closed_at: new Date(trades[trades.length - 1].timestamp).toISOString(),
+              closed_at: new Date(lastSell.timestamp).toISOString(),
               status: 'closed',
             };
             
             console.log(`[Trading] ✅ Trade sincronizado: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
           } else {
             // Cria novo registro se não encontrou trade aberto
-            const entryTrade = trades.find(t => t.side === 'Buy') || trades[0];
-            const exitTrade = trades.find(t => t.side === 'Sell') || trades[trades.length - 1];
+            const entryTrade = lastBuy;
+            const exitTrade = lastSell;
             
             tradingState.trades.push({
               symbol,
