@@ -191,10 +191,20 @@ async function monitorPositions() {
  */
 export async function runTradingCycle() {
   try {
+    console.log('[Trading] Iniciando ciclo de trading...');
+    
     // Atualiza saldo
     const balance = await getBalance();
+    console.log('[Trading] Saldo recebido:', JSON.stringify(balance));
+    
+    if (!balance || Object.keys(balance).length === 0) {
+      console.error('[Trading] Erro: Saldo vazio ou inválido');
+      return null;
+    }
+    
     const usdtBalance = balance.USDT?.available || 0;
     tradingState.balance = usdtBalance;
+    console.log('[Trading] Saldo USDT disponível:', usdtBalance);
 
     // Moedas para monitorar
     const symbols = [
@@ -215,14 +225,20 @@ export async function runTradingCycle() {
       'FILUSDT',
     ];
 
+    console.log(`[Trading] Analisando ${symbols.length} moedas...`);
+    
     // Analisa cada moeda
     const signals = [];
     for (const symbol of symbols) {
+      console.log(`[Trading] Analisando ${symbol}...`);
       const signal = await analyzeSymbol(symbol);
       if (signal) {
+        console.log(`[Trading] ${symbol}: ${signal.signal} (${signal.confidence}%)`);
         signals.push(signal);
       }
     }
+    
+    console.log(`[Trading] Total de sinais gerados: ${signals.length}`);
 
     tradingState.signals = signals;
 
@@ -248,7 +264,8 @@ export async function runTradingCycle() {
       trades: tradingState.trades.length,
     };
   } catch (error) {
-    console.error('Error in trading cycle:', error.message);
+    console.error('[Trading] Erro no ciclo de trading:', error.message);
+    console.error('[Trading] Stack trace:', error.stack);
     return null;
   }
 }
