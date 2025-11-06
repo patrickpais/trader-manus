@@ -124,7 +124,7 @@ async function executeTrade(signal, balance, parameters) {
     }
 
     // Calcula quantidade
-    const riskPercent = parameters.risk_per_trade || 5;
+    const riskPercent = parameters.risk_per_trade || 10;
     const quantity = calculateQuantity(balance, signal.price, signal.leverage, riskPercent);
 
     // Calcula SL e TP
