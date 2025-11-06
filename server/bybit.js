@@ -13,17 +13,28 @@ console.log('[Bybit] API Secret configurada:', API_SECRET ? 'Sim' : 'Não');
 /**
  * Gera assinatura para requisições autenticadas (Bybit V5)
  */
-function generateSignature(timestamp, params) {
-  // Para GET: timestamp + apiKey + recvWindow + queryString
-  // Para POST: timestamp + apiKey + recvWindow + bodyString
+function generateSignature(timestamp, method, params) {
+  // Para GET: timestamp + apiKey + recvWindow + queryString (ordenado)
+  // Para POST: timestamp + apiKey + recvWindow + bodyString (JSON)
   const recvWindow = 5000;
   
   let paramStr = '';
   if (params && Object.keys(params).length > 0) {
-    paramStr = JSON.stringify(params);
+    if (method === 'GET') {
+      // Para GET: ordenar parâmetros alfabeticamente e criar query string
+      paramStr = Object.keys(params)
+        .sort()
+        .map(key => `${key}=${params[key]}`)
+        .join('&');
+    } else {
+      // Para POST: JSON string
+      paramStr = JSON.stringify(params);
+    }
   }
   
   const message = `${timestamp}${API_KEY}${recvWindow}${paramStr}`;
+  
+  console.log('[Bybit] Signature message:', message);
   
   const signature = crypto
     .createHmac('sha256', API_SECRET)
@@ -41,7 +52,7 @@ async function authenticatedRequest(method, path, params = {}) {
     const timestamp = Date.now().toString();
     const recvWindow = 5000;
     
-    const signature = generateSignature(timestamp, params);
+    const signature = generateSignature(timestamp, method, params);
 
     const config = {
       method,
