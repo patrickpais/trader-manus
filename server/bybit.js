@@ -199,7 +199,7 @@ export async function openPosition(symbol, side, quantity, leverage, stopLoss, t
     const params = {
       category: 'linear',
       symbol,
-      side: side.toUpperCase(),
+      side: side, // Buy ou Sell (primeira letra maiúscula)
       orderType: 'Market',
       qty: quantity.toString(),
       leverage: leverage.toString(),
