@@ -10,38 +10,20 @@ let pool;
 async function initializePool() {
   if (!pool) {
     try {
-      // Usar DATABASE_URL se disponível, senão usar variáveis individuais
-      const connectionString = process.env.DATABASE_URL;
+      // Usar credenciais da Locaweb
+      pool = mysql.createPool({
+        host: 'crypto_bot_db.mysql.dbaas.com.br',
+        user: 'crypto_bot_db',
+        password: 'Gabi2205#',
+        database: 'crypto_bot_db',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelayMs: 0
+      });
       
-      if (connectionString) {
-        // Parsear DATABASE_URL
-        const url = new URL(connectionString);
-        pool = mysql.createPool({
-          host: url.hostname,
-          user: url.username,
-          password: url.password,
-          database: url.pathname.slice(1),
-          waitForConnections: true,
-          connectionLimit: 10,
-          queueLimit: 0,
-          ssl: 'Amazon RDS',
-          enableKeepAlive: true,
-          keepAliveInitialDelayMs: 0
-        });
-      } else {
-        // Fallback para variáveis individuais
-        pool = mysql.createPool({
-          host: process.env.DB_HOST || 'localhost',
-          user: process.env.DB_USER || 'root',
-          password: process.env.DB_PASSWORD || '',
-          database: process.env.DB_NAME || 'trader_manus',
-          waitForConnections: true,
-          connectionLimit: 10,
-          queueLimit: 0
-        });
-      }
-      
-      console.log('[Auth] Pool de conexão inicializado');
+      console.log('[Auth] Pool de conexão inicializado com Locaweb');
     } catch (error) {
       console.error('[Auth] Erro ao inicializar pool:', error);
       throw error;
@@ -65,8 +47,9 @@ async function ensureUsersTable() {
         role VARCHAR(50) DEFAULT 'trader',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        last_login TIMESTAMP
-      )
+        last_login TIMESTAMP,
+        INDEX idx_email (email)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
     connection.release();
