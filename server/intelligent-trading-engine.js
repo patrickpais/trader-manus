@@ -11,8 +11,7 @@ import {
   setLeverage,
 } from './bybit.js';
 import { generateUltraTradingSignal, calculateUltraSLTP } from './ultra-algorithm.js';
-import fs from 'fs';
-import path from 'path';
+import * as db from './database.js';
 import { SystemDiagnostics } from './system-diagnostics.js';
 import { PerformanceAnalyzer } from './performance-analyzer.js';
 
@@ -32,46 +31,36 @@ export const tradingState = {
   lastOptimization: null,
 };
 
-// Arquivo de persistência
-const STATE_FILE = path.join(process.cwd(), 'trading-state.json');
-
-// Carregar estado do arquivo
-function loadState() {
+// Carregar trades do banco de dados ao iniciar
+function loadTradesFromDB() {
   try {
-    if (fs.existsSync(STATE_FILE)) {
-      const data = fs.readFileSync(STATE_FILE, 'utf8');
-      const saved = JSON.parse(data);
-      
-      // Restaurar apenas dados persistentes (não estado de execução)
-      tradingState.trades = saved.trades || [];
-      tradingState.lastDiagnostic = saved.lastDiagnostic;
-      tradingState.lastOptimization = saved.lastOptimization;
-      
-      console.log(`[Trading] Estado carregado: ${tradingState.trades.length} trades no histórico`);
-    }
-  } catch (error) {
-    console.error('[Trading] Erro ao carregar estado:', error);
-  }
-}
-
-// Salvar estado no arquivo
-function saveState() {
-  try {
-    const data = {
-      trades: tradingState.trades,
-      lastDiagnostic: tradingState.lastDiagnostic,
-      lastOptimization: tradingState.lastOptimization,
-      savedAt: new Date().toISOString()
-    };
+    const closedTrades = db.getClosedTrades(100);
+    console.log(`[Database] ${closedTrades.length} trades carregados do banco de dados`);
     
-    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+    // Converter para formato do tradingState
+    tradingState.trades = closedTrades.map(t => ({
+      symbol: t.symbol,
+      side: t.side,
+      entryPrice: t.entry_price,
+      exitPrice: t.exit_price,
+      quantity: t.quantity,
+      leverage: t.leverage,
+      stopLoss: t.stop_loss,
+      takeProfit: t.take_profit,
+      pnl: t.pnl,
+      pnlPercent: t.pnl_percent,
+      opened_at: t.entry_time,
+      closed_at: t.exit_time,
+      status: t.status,
+      dbId: t.id // Manter referência ao ID do banco
+    }));
   } catch (error) {
-    console.error('[Trading] Erro ao salvar estado:', error);
+    console.error('[Database] Erro ao carregar trades:', error);
   }
 }
 
-// Carregar estado ao iniciar
-loadState();
+// Carregar trades ao iniciar
+loadTradesFromDB();
 
 // Contador de ciclos
 let cycleCount = 0;
@@ -189,8 +178,50 @@ async function executeTrade(signal, balance, parameters) {
     );
 
     if (position) {
+      // Preparar dados completos para o banco
+      const tradeData = {
+        symbol: signal.symbol,
+        side: side,
+        entry_price: signal.price,
+        entry_time: new Date().toISOString(),
+        entry_confidence: signal.confidence,
+        entry_score: signal.score || 0,
+        entry_reasons: JSON.stringify(signal.reason || []),
+        
+        // Indicadores da entrada (do ultra-algorithm)
+        entry_rsi: signal.details?.rsi || null,
+        entry_macd: signal.details?.macd || null,
+        entry_macd_signal: signal.details?.macd_signal || null,
+        entry_macd_histogram: signal.details?.macd_histogram || null,
+        entry_bb_upper: signal.details?.bb_upper || null,
+        entry_bb_middle: signal.details?.bb_middle || null,
+        entry_bb_lower: signal.details?.bb_lower || null,
+        entry_volume_ratio: signal.details?.volume_ratio || null,
+        entry_trend: signal.details?.trend || null,
+        entry_volatility: signal.details?.volatility || null,
+        
+        // Condições de mercado (se disponível)
+        market_volatility_24h: signal.details?.volatility_24h || null,
+        market_volume_24h: signal.details?.volume_24h || null,
+        market_price_change_1h: signal.details?.price_change_1h || null,
+        market_price_change_24h: signal.details?.price_change_24h || null,
+        
+        // Configuração do trade
+        quantity: quantity,
+        leverage: signal.leverage,
+        stop_loss: stopLoss,
+        take_profit: takeProfit,
+        status: 'open'
+      };
+      
+      // Salvar no banco de dados
+      const tradeId = db.createTrade(tradeData);
+      console.log(`[Database] Trade criado com ID: ${tradeId}`);
+      
+      // Criar objeto para tradingState (compatibilidade)
       const trade = {
         ...position,
+        dbId: tradeId,
         confidence: signal.confidence,
         entryPrice: signal.price,
         stopLoss,
@@ -202,9 +233,8 @@ async function executeTrade(signal, balance, parameters) {
         status: 'open'
       };
 
-      // Registra trade
+      // Registra trade no estado (para compatibilidade)
       tradingState.trades.push(trade);
-      saveState(); // Salva estado após adicionar trade
 
       console.log(`[Trading] ✅ Trade aberto: ${signal.symbol} ${side} ${quantity} @ ${signal.price} (${signal.leverage}x)`);
       
@@ -290,15 +320,59 @@ async function syncClosedTrades() {
           if (openTradeIndex > -1) {
             // Atualiza trade existente
             const openTrade = tradingState.trades[openTradeIndex];
+            const closedAt = new Date(lastSell.timestamp);
+            const durationMinutes = Math.round((closedAt - new Date(openTrade.opened_at)) / 60000);
+            const pnlPercent = (totalPnl / (openTrade.entryPrice * openTrade.quantity)) * 100;
+            
             tradingState.trades[openTradeIndex] = {
               ...openTrade,
               exitPrice: lastSell.price,
               pnl: totalPnl,
-              pnlPercent: (totalPnl / (openTrade.entryPrice * openTrade.quantity)) * 100,
-              closed_at: new Date(lastSell.timestamp).toISOString(),
+              pnlPercent: pnlPercent,
+              closed_at: closedAt.toISOString(),
               status: 'closed',
             };
             saveState(); // Salva estado após atualizar trade
+            
+            // Registra dados de saída no banco
+            try {
+              // Busca indicadores de saída
+              let exitIndicators = {};
+              try {
+                const candles = await getHistoricalData(symbol, '5', 100);
+                if (candles && candles.length > 0) {
+                  const indicators = calculateIndicators(candles);
+                  const lastIdx = indicators.rsi.length - 1;
+                  exitIndicators = {
+                    exit_rsi: indicators.rsi[lastIdx],
+                    exit_macd: indicators.macd[lastIdx],
+                    exit_macd_signal: indicators.macd_signal[lastIdx],
+                    exit_volume_ratio: candles[candles.length - 1].volume / (candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20),
+                  };
+                }
+              } catch (err) {
+                console.error('[Sync] Erro ao buscar indicadores de saída:', err.message);
+              }
+              
+              // Determina razão do fechamento baseado no PnL
+              const exitReason = pnlPercent < -3 ? 'stop_loss' : pnlPercent > 10 ? 'take_profit' : 'manual';
+              
+              tradeDB.updateTradeExit(
+                openTrade.symbol,
+                new Date(openTrade.opened_at),
+                {
+                  exit_price: lastSell.price,
+                  exit_reason: exitReason,
+                  pnl: totalPnl,
+                  pnl_percent: pnlPercent,
+                  duration_minutes: durationMinutes,
+                  ...exitIndicators,
+                }
+              );
+              console.log(`[Database] ✅ Dados de saída registrados para ${symbol} (sync)`);
+            } catch (dbErr) {
+              console.error('[Database] Erro ao registrar saída (sync):', dbErr.message);
+            }
             
             console.log(`[Trading] ✅ Trade sincronizado: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
           } else {
@@ -359,6 +433,27 @@ async function monitorPositions(parameters) {
       if (pnlPercent <= stopLossPercent || pnlPercent >= takeProfitPercent) {
         console.log(`[Trading] 🔔 Fechando ${pos.symbol}: PnL = ${pnlPercent.toFixed(2)}%`);
         
+        // Determina razão do fechamento
+        const exitReason = pnlPercent <= stopLossPercent ? 'stop_loss' : 'take_profit';
+        
+        // Busca indicadores de saída antes de fechar
+        let exitIndicators = {};
+        try {
+          const candles = await getHistoricalData(pos.symbol, '5', 100);
+          if (candles && candles.length > 0) {
+            const indicators = calculateIndicators(candles);
+            const lastIdx = indicators.rsi.length - 1;
+            exitIndicators = {
+              exit_rsi: indicators.rsi[lastIdx],
+              exit_macd: indicators.macd[lastIdx],
+              exit_macd_signal: indicators.macd_signal[lastIdx],
+              exit_volume_ratio: candles[candles.length - 1].volume / (candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20),
+            };
+          }
+        } catch (err) {
+          console.error('[Trading] Erro ao buscar indicadores de saída:', err.message);
+        }
+        
         await closePosition(pos.symbol, pos.side);
 
         // Atualiza trade no histórico
@@ -367,15 +462,38 @@ async function monitorPositions(parameters) {
         );
 
         if (tradeIndex > -1) {
+          const openTrade = tradingState.trades[tradeIndex];
+          const closedAt = new Date();
+          const durationMinutes = Math.round((closedAt - new Date(openTrade.opened_at)) / 60000);
+          
           tradingState.trades[tradeIndex] = {
-            ...tradingState.trades[tradeIndex],
+            ...openTrade,
             exitPrice: pos.currentPrice,
             pnl: pos.unrealizedPnl,
             pnlPercent: pnlPercent,
-            closed_at: new Date().toISOString(),
+            closed_at: closedAt.toISOString(),
             status: 'closed',
           };
           saveState(); // Salva estado após fechar trade
+          
+          // Registra dados de saída no banco
+          try {
+            tradeDB.updateTradeExit(
+              openTrade.symbol,
+              new Date(openTrade.opened_at),
+              {
+                exit_price: pos.currentPrice,
+                exit_reason: exitReason,
+                pnl: pos.unrealizedPnl,
+                pnl_percent: pnlPercent,
+                duration_minutes: durationMinutes,
+                ...exitIndicators,
+              }
+            );
+            console.log(`[Database] ✅ Dados de saída registrados para ${pos.symbol}`);
+          } catch (dbErr) {
+            console.error('[Database] Erro ao registrar saída:', dbErr.message);
+          }
         }
       }
     }

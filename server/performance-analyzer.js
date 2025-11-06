@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
+const patternAnalyzer = require('./pattern-analyzer');
 
 export class PerformanceAnalyzer {
   constructor() {
@@ -49,6 +50,11 @@ export class PerformanceAnalyzer {
   // Analisar performance das últimas 24h
   async analyzeRecentPerformance(trades) {
     console.log('[Performance] Analisando performance recente...');
+    
+    // Adiciona análise de padrões do banco de dados
+    console.log('[Performance] Analisando padrões de trades...');
+    const patternAnalysis = patternAnalyzer.analyzeWinningPatterns();
+    const performanceStats = patternAnalyzer.getPerformanceStats();
     
     const now = Date.now();
     const last24h = now - (24 * 60 * 60 * 1000);
@@ -116,7 +122,9 @@ export class PerformanceAnalyzer {
       avg_win: avgWin,
       avg_loss: avgLoss,
       profit_factor: avgLoss > 0 ? avgWin / avgLoss : 0,
-      coin_performance: coinPerformance
+      coin_performance: coinPerformance,
+      pattern_analysis: patternAnalysis,
+      performance_stats: performanceStats
     };
   }
 
@@ -125,6 +133,22 @@ export class PerformanceAnalyzer {
     const issues = [];
     const opportunities = [];
     const recommendations = [];
+    
+    // Adiciona recomendações do pattern analyzer
+    if (performance.pattern_analysis && performance.pattern_analysis.recommendations) {
+      console.log(`[Performance] Incorporando ${performance.pattern_analysis.recommendations.length} recomendações do pattern analyzer`);
+      
+      for (const patternRec of performance.pattern_analysis.recommendations) {
+        if (patternRec.priority === 'high') {
+          recommendations.push({
+            action: 'apply_pattern_insight',
+            description: patternRec.message,
+            pattern_type: patternRec.type,
+            pattern_data: patternRec
+          });
+        }
+      }
+    }
 
     // 1. Win Rate Baixo
     if (performance.win_rate < 45) {
@@ -287,6 +311,20 @@ export class PerformanceAnalyzer {
       case 'pause_trading':
         console.log(`[Performance] ALERTA: ROI negativo - considerar pausar trading`);
         return { success: true, message: 'Alerta registrado' };
+      
+      case 'apply_pattern_insight':
+        console.log(`[Performance] Aplicando insight de padrão: ${recommendation.pattern_type}`);
+        const patternData = recommendation.pattern_data;
+        
+        // Aplica ajustes baseados no tipo de insight
+        if (patternData.type === 'threshold' && patternData.suggestedValue) {
+          this.learningData.current_parameters.confidence_threshold = patternData.suggestedValue;
+          console.log(`[Performance] Threshold ajustado para ${patternData.suggestedValue}% baseado em padrões`);
+        } else if (patternData.type === 'indicator' && patternData.suggestedRange) {
+          console.log(`[Performance] Insight registrado: ${patternData.indicator} deve estar em [${patternData.suggestedRange.join(', ')}]`);
+        }
+        
+        return { success: true, message: 'Insight de padrão aplicado' };
 
       default:
         return { success: false, error: 'Ação desconhecida' };
