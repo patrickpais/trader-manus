@@ -179,10 +179,13 @@ async function executeTrade(signal, balance, parameters) {
  */
 async function syncClosedTrades() {
   try {
+    console.log('[Sync] Iniciando sincronização de trades fechados...');
     const recentTrades = await getTradeHistory(null, 100);
+    console.log(`[Sync] Trades recebidos da Bybit: ${recentTrades.length}`);
     
     // Agrupa trades por símbolo e orderId para identificar fechamentos
     const tradesByOrder = {};
+    console.log('[Sync] Agrupando trades por orderId...');
     for (const trade of recentTrades) {
       if (!tradesByOrder[trade.orderId]) {
         tradesByOrder[trade.orderId] = [];
@@ -191,6 +194,7 @@ async function syncClosedTrades() {
     }
     
     // Processa cada ordem para detectar fechamentos
+    console.log(`[Sync] Processando ${Object.keys(tradesByOrder).length} ordens...`);
     for (const [orderId, trades] of Object.entries(tradesByOrder)) {
       // Se tem trades de abertura e fechamento, é uma posição fechada
       const hasBuy = trades.some(t => t.side === 'Buy');
@@ -198,6 +202,7 @@ async function syncClosedTrades() {
       
       if (hasBuy && hasSell) {
         const symbol = trades[0].symbol;
+        console.log(`[Sync] Ordem ${orderId} - ${symbol}: Posição fechada detectada`);
         
         // Verifica se já está registrado no histórico local
         const existsInLocal = tradingState.trades.some(
@@ -206,8 +211,10 @@ async function syncClosedTrades() {
         );
         
         if (!existsInLocal) {
+          console.log(`[Sync] Trade ${symbol} não encontrado no histórico local, adicionando...`);
           // Calcula PnL total da ordem
           const totalPnl = trades.reduce((sum, t) => sum + t.pnl, 0);
+          console.log(`[Sync] PnL total calculado: $${totalPnl.toFixed(2)}`);
           
           // Encontra trade aberto correspondente
           const openTradeIndex = tradingState.trades.findIndex(
@@ -253,8 +260,11 @@ async function syncClosedTrades() {
         }
       }
     }
+    
+    console.log(`[Sync] Sincronização concluída. Trades no histórico: ${tradingState.trades.length}`);
   } catch (error) {
-    console.error('[Trading] Erro ao sincronizar trades fechados:', error);
+    console.error('[Sync] Erro ao sincronizar trades fechados:', error);
+    console.error('[Sync] Stack trace:', error.stack);
   }
 }
 
