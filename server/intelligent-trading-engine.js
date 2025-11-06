@@ -11,6 +11,8 @@ import {
   setLeverage,
 } from './bybit.js';
 import { generateUltraTradingSignal, calculateUltraSLTP } from './ultra-algorithm.js';
+import fs from 'fs';
+import path from 'path';
 import { SystemDiagnostics } from './system-diagnostics.js';
 import { PerformanceAnalyzer } from './performance-analyzer.js';
 
@@ -29,6 +31,47 @@ export const tradingState = {
   lastDiagnostic: null,
   lastOptimization: null,
 };
+
+// Arquivo de persistência
+const STATE_FILE = path.join(process.cwd(), 'trading-state.json');
+
+// Carregar estado do arquivo
+function loadState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const data = fs.readFileSync(STATE_FILE, 'utf8');
+      const saved = JSON.parse(data);
+      
+      // Restaurar apenas dados persistentes (não estado de execução)
+      tradingState.trades = saved.trades || [];
+      tradingState.lastDiagnostic = saved.lastDiagnostic;
+      tradingState.lastOptimization = saved.lastOptimization;
+      
+      console.log(`[Trading] Estado carregado: ${tradingState.trades.length} trades no histórico`);
+    }
+  } catch (error) {
+    console.error('[Trading] Erro ao carregar estado:', error);
+  }
+}
+
+// Salvar estado no arquivo
+function saveState() {
+  try {
+    const data = {
+      trades: tradingState.trades,
+      lastDiagnostic: tradingState.lastDiagnostic,
+      lastOptimization: tradingState.lastOptimization,
+      savedAt: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error('[Trading] Erro ao salvar estado:', error);
+  }
+}
+
+// Carregar estado ao iniciar
+loadState();
 
 // Contador de ciclos
 let cycleCount = 0;
@@ -161,6 +204,7 @@ async function executeTrade(signal, balance, parameters) {
 
       // Registra trade
       tradingState.trades.push(trade);
+      saveState(); // Salva estado após adicionar trade
 
       console.log(`[Trading] ✅ Trade aberto: ${signal.symbol} ${side} ${quantity} @ ${signal.price} (${signal.leverage}x)`);
       
@@ -254,6 +298,7 @@ async function syncClosedTrades() {
               closed_at: new Date(lastSell.timestamp).toISOString(),
               status: 'closed',
             };
+            saveState(); // Salva estado após atualizar trade
             
             console.log(`[Trading] ✅ Trade sincronizado: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
           } else {
@@ -264,9 +309,9 @@ async function syncClosedTrades() {
             tradingState.trades.push({
               symbol,
               side: entryTrade.side,
-              quantity: entryTrade.size,
               entryPrice: entryTrade.price,
               exitPrice: exitTrade.price,
+              quantity: entryTrade.size,
               leverage: 0, // Não temos essa info no histórico
               stopLoss: 0,
               takeProfit: 0,
@@ -276,6 +321,7 @@ async function syncClosedTrades() {
               closed_at: new Date(exitTrade.timestamp).toISOString(),
               status: 'closed',
             });
+            saveState(); // Salva estado após adicionar trade do histórico
             
             console.log(`[Trading] ✅ Trade recuperado do histórico: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
           }
@@ -329,6 +375,7 @@ async function monitorPositions(parameters) {
             closed_at: new Date().toISOString(),
             status: 'closed',
           };
+          saveState(); // Salva estado após fechar trade
         }
       }
     }
