@@ -337,10 +337,10 @@ export function generateTradingSignal(indicators, prediction) {
     reason.push('IA prevê baixa');
   }
 
-  // Decisão de sinal (precisa de pelo menos 4 pontos e confiança > 60%)
-  if (bullishScore >= 4 && confidence > 60) {
+  // Decisão de sinal (precisa de pelo menos 6 pontos e confiança > 70%)
+  if (bullishScore >= 6 && confidence > 70) {
     signal = 'BUY';
-  } else if (bearishScore >= 4 && confidence > 60) {
+  } else if (bearishScore >= 6 && confidence > 70) {
     signal = 'SELL';
   } else {
     signal = 'HOLD';

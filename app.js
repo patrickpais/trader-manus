@@ -8,6 +8,7 @@ import {
   getStatus,
   runTradingCycle,
 } from './server/tradingEngine.js';
+import { runIntelligentTradingCycle, tradingState as intelligentState } from './server/intelligent-trading-engine.js';
 import { testConnection } from './server/bybit.js';
 
 // Importar novos módulos
@@ -165,8 +166,8 @@ app.post('/api/trading/start', authMiddleware, async (req, res) => {
 
     startTrading();
 
-    // Executa primeiro ciclo imediatamente
-    await runTradingCycle();
+    // Executa primeiro ciclo imediatamente com sistema inteligente
+    await runIntelligentTradingCycle();
 
     res.json({
       message: 'Trading iniciado com sucesso',
@@ -196,7 +197,7 @@ app.post('/api/trading/stop', authMiddleware, (req, res) => {
  */
 app.post('/api/trading/cycle', authMiddleware, async (req, res) => {
   try {
-    const result = await runTradingCycle();
+    const result = await runIntelligentTradingCycle();
 
     res.json({
       message: 'Ciclo executado',
