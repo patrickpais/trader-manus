@@ -9,7 +9,7 @@ import {
   getOpenPositions,
   setLeverage,
 } from './bybit.js';
-import { generateSignalUltraAdvanced } from './ultra-algorithm.js';
+import { generateUltraTradingSignal, calculateUltraSLTP } from './ultra-algorithm.js';
 import { SystemDiagnostics } from './system-diagnostics.js';
 import { PerformanceAnalyzer } from './performance-analyzer.js';
 
@@ -90,22 +90,22 @@ async function analyzeSymbol(symbol, parameters) {
     if (!priceData) return null;
 
     // Gera sinal com algoritmo ultra-avançado
-    const signal = await generateSignalUltraAdvanced(klines, priceData, symbol);
+    const signalData = generateUltraTradingSignal(symbol, klines);
 
-    if (!signal) return null;
+    if (!signalData || signalData.signal === 'HOLD') return null;
 
     // Calcula alavancagem baseada em parâmetros aprendidos
-    const leverage = calculateLeverage(signal.confidence, parameters);
+    const leverage = calculateLeverage(signalData.confidence, parameters);
 
     return {
       symbol,
       timestamp: Date.now(),
       price: priceData.price,
-      signal: signal.signal,
-      confidence: signal.confidence,
-      direction: signal.direction,
-      indicators: signal.indicators,
-      sentiment: signal.sentiment,
+      signal: signalData.signal,
+      confidence: signalData.confidence,
+      reason: signalData.reason,
+      score: signalData.score,
+      details: signalData.details,
       leverage,
     };
   } catch (error) {
@@ -151,7 +151,8 @@ async function executeTrade(signal, balance, parameters) {
         entryPrice: signal.price,
         stopLoss,
         takeProfit,
-        sentiment: signal.sentiment,
+        reason: signal.reason || [],
+        score: signal.score || 0,
         expectedProfit: (signal.price * quantity * ((parameters.take_profit_percent || 15) / 100) * signal.leverage).toFixed(2),
         opened_at: new Date().toISOString(),
         status: 'open'
