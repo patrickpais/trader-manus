@@ -1,6 +1,5 @@
-const axios = require('axios');
+import axios from 'axios';
 
-// Análise de sentimento simples usando palavras-chave
 const sentimentKeywords = {
   positive: [
     'bull', 'bullish', 'surge', 'pump', 'rally', 'gain', 'profit', 'moon',
@@ -14,10 +13,8 @@ const sentimentKeywords = {
   ]
 };
 
-// Buscar notícias de CryptoNews API
 async function fetchCryptoNews(symbol) {
   try {
-    // Usando API pública (pode precisar de chave)
     const response = await axios.get('https://cryptopanic.com/api/v1/posts/', {
       params: {
         auth_token: process.env.CRYPTOPANIC_API_KEY || 'demo',
@@ -35,7 +32,6 @@ async function fetchCryptoNews(symbol) {
   }
 }
 
-// Analisar sentimento de um texto
 function analyzeSentiment(text) {
   if (!text) return { score: 0, sentiment: 'neutral' };
 
@@ -43,21 +39,18 @@ function analyzeSentiment(text) {
   let positiveCount = 0;
   let negativeCount = 0;
 
-  // Contar palavras positivas
   sentimentKeywords.positive.forEach(word => {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     const matches = lowerText.match(regex);
     if (matches) positiveCount += matches.length;
   });
 
-  // Contar palavras negativas
   sentimentKeywords.negative.forEach(word => {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     const matches = lowerText.match(regex);
     if (matches) negativeCount += matches.length;
   });
 
-  // Calcular score (-100 a +100)
   const total = positiveCount + negativeCount;
   let score = 0;
 
@@ -65,7 +58,6 @@ function analyzeSentiment(text) {
     score = ((positiveCount - negativeCount) / total) * 100;
   }
 
-  // Classificar sentimento
   let sentiment = 'neutral';
   if (score > 20) sentiment = 'positive';
   else if (score < -20) sentiment = 'negative';
@@ -75,11 +67,10 @@ function analyzeSentiment(text) {
     sentiment,
     positiveCount,
     negativeCount,
-    confidence: Math.min(100, (total / 10) * 100) // Confiança baseada em quantidade de palavras
+    confidence: Math.min(100, (total / 10) * 100)
   };
 }
 
-// Analisar notícias de uma moeda
 async function analyzeSymbolNews(symbol) {
   try {
     const news = await fetchCryptoNews(symbol);
@@ -94,13 +85,11 @@ async function analyzeSymbolNews(symbol) {
       };
     }
 
-    // Analisar sentimento de cada notícia
     const sentiments = news.slice(0, 10).map(article => {
       const text = `${article.title} ${article.body || ''}`;
       return analyzeSentiment(text);
     });
 
-    // Calcular média de sentimento
     const averageScore = Math.round(
       sentiments.reduce((sum, s) => sum + s.score, 0) / sentiments.length
     );
@@ -109,12 +98,10 @@ async function analyzeSymbolNews(symbol) {
       sentiments.reduce((sum, s) => sum + s.confidence, 0) / sentiments.length
     );
 
-    // Classificar sentimento geral
     let sentiment = 'neutral';
     if (averageScore > 20) sentiment = 'positive';
     else if (averageScore < -20) sentiment = 'negative';
 
-    // Calcular impacto (0-100)
     const impact = Math.abs(averageScore);
 
     return {
@@ -144,20 +131,15 @@ async function analyzeSymbolNews(symbol) {
   }
 }
 
-// Ajustar confiança do sinal baseado em sentimento
 function adjustConfidenceByNews(signalConfidence, newsSentiment) {
-  // Ajuste baseado no sentimento
   let adjustment = 0;
 
   if (newsSentiment.sentiment === 'positive') {
-    // Aumentar confiança em até 25%
     adjustment = (newsSentiment.impact / 100) * 25;
   } else if (newsSentiment.sentiment === 'negative') {
-    // Diminuir confiança em até 25%
     adjustment = -(newsSentiment.impact / 100) * 25;
   }
 
-  // Aplicar ajuste
   const adjustedConfidence = Math.max(0, Math.min(100, signalConfidence + adjustment));
 
   return {
@@ -168,7 +150,6 @@ function adjustConfidenceByNews(signalConfidence, newsSentiment) {
   };
 }
 
-// Analisar múltiplas moedas
 async function analyzeMultipleSymbols(symbols) {
   const results = await Promise.all(
     symbols.map(symbol => analyzeSymbolNews(symbol))
@@ -177,7 +158,7 @@ async function analyzeMultipleSymbols(symbols) {
   return results;
 }
 
-module.exports = {
+export default {
   fetchCryptoNews,
   analyzeSentiment,
   analyzeSymbolNews,

@@ -1,6 +1,5 @@
-const nodemailer = require('nodemailer');
+import nodemailer from 'nodemailer';
 
-// Configuração de email (usar variáveis de ambiente)
 const emailConfig = {
   service: process.env.EMAIL_SERVICE || 'gmail',
   auth: {
@@ -11,7 +10,6 @@ const emailConfig = {
 
 let transporter = null;
 
-// Inicializar transporter de email
 function initializeEmailTransporter() {
   if (!transporter && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
     transporter = nodemailer.createTransport(emailConfig);
@@ -19,17 +17,14 @@ function initializeEmailTransporter() {
   return transporter;
 }
 
-// Limites de créditos
 const CREDIT_LIMITS = {
-  critical: 5,      // Crítico: menos de 5 créditos
-  low: 20,          // Baixo: menos de 20 créditos
-  warning: 50       // Aviso: menos de 50 créditos
+  critical: 5,
+  low: 20,
+  warning: 50
 };
 
-// Histórico de notificações (para não enviar duplicadas)
 const notificationHistory = new Map();
 
-// Enviar email de alerta
 async function sendCreditAlert(userEmail, creditLevel, status) {
   try {
     const transporter = initializeEmailTransporter();
@@ -101,43 +96,25 @@ async function sendCreditAlert(userEmail, creditLevel, status) {
   }
 }
 
-// Enviar SMS (usando Twilio ou similar)
 async function sendCreditAlertSMS(phoneNumber, creditLevel, status) {
   try {
-    // Implementar com Twilio ou outro serviço SMS
     if (!process.env.TWILIO_ACCOUNT_SID) {
       console.log('SMS não configurado');
       return { success: false, reason: 'SMS não configurado' };
     }
 
-    // Exemplo com Twilio
-    const twilio = require('twilio');
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-
-    const message = `Trader-Manus: Créditos ${status}! Restantes: ${creditLevel}. Renove em: https://manus.im`;
-
-    await client.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phoneNumber
-    });
-
-    return { success: true };
+    // Implementar com Twilio quando necessário
+    return { success: false, reason: 'SMS não implementado' };
   } catch (error) {
     console.error('Erro ao enviar SMS:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Monitorar créditos
 async function monitorCredits(currentCredits, userEmail, userPhone = null) {
   const notificationKey = `${userEmail}-${currentCredits}`;
   const lastNotification = notificationHistory.get(userEmail);
 
-  // Não enviar notificações duplicadas no mesmo nível
   if (lastNotification && lastNotification.level === getCurrentLevel(currentCredits)) {
     return { status: 'skipped', reason: 'Notificação já enviada para este nível' };
   }
@@ -157,16 +134,13 @@ async function monitorCredits(currentCredits, userEmail, userPhone = null) {
   }
 
   if (shouldNotify) {
-    // Enviar email
     const emailResult = await sendCreditAlert(userEmail, currentCredits, status);
 
-    // Enviar SMS se configurado
     let smsResult = { success: false };
     if (userPhone) {
       smsResult = await sendCreditAlertSMS(userPhone, currentCredits, status);
     }
 
-    // Registrar notificação
     notificationHistory.set(userEmail, {
       level: status,
       credits: currentCredits,
@@ -186,7 +160,6 @@ async function monitorCredits(currentCredits, userEmail, userPhone = null) {
   return { status: 'ok', credits: currentCredits };
 }
 
-// Obter nível atual de créditos
 function getCurrentLevel(credits) {
   if (credits <= CREDIT_LIMITS.critical) return 'critical';
   if (credits <= CREDIT_LIMITS.low) return 'low';
@@ -194,29 +167,23 @@ function getCurrentLevel(credits) {
   return 'ok';
 }
 
-// Calcular custo estimado mensal
 function estimateMonthlyCost(features = {}) {
   let cost = 0;
 
-  // Custo base: servidor 24/7
   cost += 12;
 
-  // Custo de análise de notícias
   if (features.newsAnalysis) {
     cost += 3;
   }
 
-  // Custo de análise de redes sociais
   if (features.socialAnalysis) {
     cost += 5;
   }
 
-  // Custo de alertas por SMS
   if (features.smsAlerts) {
     cost += 2;
   }
 
-  // Custo de análise avançada
   if (features.advancedAnalysis) {
     cost += 3;
   }
@@ -224,7 +191,6 @@ function estimateMonthlyCost(features = {}) {
   return cost;
 }
 
-// Calcular dias restantes de operação
 function calculateDaysRemaining(currentCredits, features = {}) {
   const monthlyCost = estimateMonthlyCost(features);
   const dailyCost = monthlyCost / 30;
@@ -238,7 +204,7 @@ function calculateDaysRemaining(currentCredits, features = {}) {
   };
 }
 
-module.exports = {
+export default {
   monitorCredits,
   sendCreditAlert,
   sendCreditAlertSMS,

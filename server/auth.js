@@ -1,11 +1,10 @@
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const mysql = require('mysql2/promise');
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import mysql from 'mysql2/promise';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'trader-manus-secret-key-2024';
 const JWT_EXPIRY = '24h';
 
-// Pool de conexão MySQL
 let pool;
 
 async function initializePool() {
@@ -23,13 +22,11 @@ async function initializePool() {
   return pool;
 }
 
-// Registrar novo usuário
 async function registerUser(email, password, name) {
   try {
     const pool = await initializePool();
     const connection = await pool.getConnection();
 
-    // Verificar se usuário já existe
     const [existingUsers] = await connection.query(
       'SELECT id FROM users WHERE email = ?',
       [email]
@@ -40,10 +37,8 @@ async function registerUser(email, password, name) {
       return { success: false, error: 'Usuário já existe' };
     }
 
-    // Hash da senha
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Inserir novo usuário
     await connection.query(
       'INSERT INTO users (email, password, name, role, created_at) VALUES (?, ?, ?, ?, NOW())',
       [email, hashedPassword, name || email, 'trader']
@@ -57,13 +52,11 @@ async function registerUser(email, password, name) {
   }
 }
 
-// Login do usuário
 async function loginUser(email, password) {
   try {
     const pool = await initializePool();
     const connection = await pool.getConnection();
 
-    // Buscar usuário
     const [users] = await connection.query(
       'SELECT id, email, password, name, role FROM users WHERE email = ?',
       [email]
@@ -76,7 +69,6 @@ async function loginUser(email, password) {
 
     const user = users[0];
 
-    // Verificar senha
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
@@ -84,7 +76,6 @@ async function loginUser(email, password) {
       return { success: false, error: 'Senha incorreta' };
     }
 
-    // Gerar JWT token
     const token = jwt.sign(
       {
         id: user.id,
@@ -96,7 +87,6 @@ async function loginUser(email, password) {
       { expiresIn: JWT_EXPIRY }
     );
 
-    // Atualizar último login
     await connection.query(
       'UPDATE users SET last_login = NOW() WHERE id = ?',
       [user.id]
@@ -120,7 +110,6 @@ async function loginUser(email, password) {
   }
 }
 
-// Verificar token JWT
 function verifyToken(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -130,7 +119,6 @@ function verifyToken(token) {
   }
 }
 
-// Middleware de autenticação
 function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
 
@@ -148,7 +136,6 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-// Middleware para verificar role
 function requireRole(role) {
   return (req, res, next) => {
     if (!req.user) {
@@ -163,7 +150,7 @@ function requireRole(role) {
   };
 }
 
-module.exports = {
+export default {
   registerUser,
   loginUser,
   verifyToken,
