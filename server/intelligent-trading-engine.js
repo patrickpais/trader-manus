@@ -174,6 +174,91 @@ async function executeTrade(signal, balance, parameters) {
 }
 
 /**
+ * Sincroniza trades fechados com histórico da Bybit
+ */
+async function syncClosedTrades() {
+  try {
+    const { getTradeHistory } = await import('./bybit.js');
+    const recentTrades = await getTradeHistory(null, 100);
+    
+    // Agrupa trades por símbolo e orderId para identificar fechamentos
+    const tradesByOrder = {};
+    for (const trade of recentTrades) {
+      if (!tradesByOrder[trade.orderId]) {
+        tradesByOrder[trade.orderId] = [];
+      }
+      tradesByOrder[trade.orderId].push(trade);
+    }
+    
+    // Processa cada ordem para detectar fechamentos
+    for (const [orderId, trades] of Object.entries(tradesByOrder)) {
+      // Se tem trades de abertura e fechamento, é uma posição fechada
+      const hasBuy = trades.some(t => t.side === 'Buy');
+      const hasSell = trades.some(t => t.side === 'Sell');
+      
+      if (hasBuy && hasSell) {
+        const symbol = trades[0].symbol;
+        
+        // Verifica se já está registrado no histórico local
+        const existsInLocal = tradingState.trades.some(
+          t => t.symbol === symbol && t.status === 'closed' && 
+               Math.abs(new Date(t.closed_at).getTime() - trades[trades.length - 1].timestamp) < 60000
+        );
+        
+        if (!existsInLocal) {
+          // Calcula PnL total da ordem
+          const totalPnl = trades.reduce((sum, t) => sum + t.pnl, 0);
+          
+          // Encontra trade aberto correspondente
+          const openTradeIndex = tradingState.trades.findIndex(
+            t => t.symbol === symbol && t.status === 'open'
+          );
+          
+          if (openTradeIndex > -1) {
+            // Atualiza trade existente
+            const openTrade = tradingState.trades[openTradeIndex];
+            tradingState.trades[openTradeIndex] = {
+              ...openTrade,
+              exitPrice: trades[trades.length - 1].price,
+              pnl: totalPnl,
+              pnlPercent: (totalPnl / (openTrade.entryPrice * openTrade.quantity)) * 100,
+              closed_at: new Date(trades[trades.length - 1].timestamp).toISOString(),
+              status: 'closed',
+            };
+            
+            console.log(`[Trading] ✅ Trade sincronizado: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
+          } else {
+            // Cria novo registro se não encontrou trade aberto
+            const entryTrade = trades.find(t => t.side === 'Buy') || trades[0];
+            const exitTrade = trades.find(t => t.side === 'Sell') || trades[trades.length - 1];
+            
+            tradingState.trades.push({
+              symbol,
+              side: entryTrade.side,
+              quantity: entryTrade.size,
+              entryPrice: entryTrade.price,
+              exitPrice: exitTrade.price,
+              leverage: 0, // Não temos essa info no histórico
+              stopLoss: 0,
+              takeProfit: 0,
+              pnl: totalPnl,
+              pnlPercent: ((exitTrade.price - entryTrade.price) / entryTrade.price) * 100,
+              opened_at: new Date(entryTrade.timestamp).toISOString(),
+              closed_at: new Date(exitTrade.timestamp).toISOString(),
+              status: 'closed',
+            });
+            
+            console.log(`[Trading] ✅ Trade recuperado do histórico: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Trading] Erro ao sincronizar trades fechados:', error);
+  }
+}
+
+/**
  * Monitora posições abertas com trailing stop
  */
 async function monitorPositions(parameters) {
@@ -393,6 +478,9 @@ export async function runIntelligentTradingCycle() {
     console.log(`[Trading] Total de sinais gerados: ${signals.length}`);
     tradingState.signals = signals;
 
+    // Sincroniza trades fechados com histórico da Bybit
+    await syncClosedTrades();
+    
     // Monitora posições abertas
     await monitorPositions(parameters);
 
