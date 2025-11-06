@@ -227,10 +227,16 @@ async function syncClosedTrades() {
         if (!existsInLocal) {
           console.log(`[Sync] Trade ${symbol} não encontrado no histórico local, adicionando...`);
           
-          // Calcula PnL total (soma todos os PnLs)
-          const totalPnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-          console.log(`[Sync] PnL total calculado: $${totalPnl.toFixed(2)}`);
-          console.log(`[Sync] Detalhes: Buy @ ${lastBuy.price}, Sell @ ${lastSell.price}`);
+          // Calcula PnL manualmente baseado nos preços
+          // PnL = (Preço de Saída - Preço de Entrada) * Quantidade
+          const entryPrice = lastBuy.price;
+          const exitPrice = lastSell.price;
+          const quantity = lastBuy.size;
+          const totalPnl = (exitPrice - entryPrice) * quantity;
+          
+          console.log(`[Sync] PnL calculado manualmente: $${totalPnl.toFixed(2)}`);
+          console.log(`[Sync] Detalhes: Buy @ ${entryPrice} x ${quantity}, Sell @ ${exitPrice}`);
+          console.log(`[Sync] Cálculo: (${exitPrice} - ${entryPrice}) * ${quantity} = ${totalPnl.toFixed(2)}`);
           
           // Encontra trade aberto correspondente
           const openTradeIndex = tradingState.trades.findIndex(
@@ -265,7 +271,7 @@ async function syncClosedTrades() {
               stopLoss: 0,
               takeProfit: 0,
               pnl: totalPnl,
-              pnlPercent: ((exitTrade.price - entryTrade.price) / entryTrade.price) * 100,
+              pnlPercent: ((exitPrice - entryPrice) / entryPrice) * 100,
               opened_at: new Date(entryTrade.timestamp).toISOString(),
               closed_at: new Date(exitTrade.timestamp).toISOString(),
               status: 'closed',
