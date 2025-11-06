@@ -486,7 +486,14 @@ app.use((err, req, res, next) => {
 // START SERVER
 // ============================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  // Inicializar tabela de usuários
+  try {
+    await authModule.ensureUsersTable();
+  } catch (error) {
+    console.error('Erro ao inicializar tabela de usuários:', error);
+  }
+
   console.log(`
 ╔════════════════════════════════════════╗
 ║     🤖 TRADER-MANUS INICIADO 🤖       ║
