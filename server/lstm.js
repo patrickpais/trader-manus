@@ -286,38 +286,65 @@ export function generateTradingSignal(indicators, prediction) {
   const sma20 = indicators.sma20 || 0;
   const sma50 = indicators.sma50 || 0;
 
-  // Sinal de COMPRA
-  if (
-    rsi < 35 &&
-    macd.histogram > 0 &&
-    price > sma20 &&
-    prediction.direction === 'bullish' &&
-    confidence > 65
-  ) {
-    signal = 'BUY';
-    reason = [
-      'RSI sobrevendido',
-      'MACD positivo',
-      'Acima SMA20',
-      'LSTM bullish',
-    ];
+  // Contadores de sinais bullish e bearish
+  let bullishScore = 0;
+  let bearishScore = 0;
+
+  // Análise de RSI
+  if (rsi < 40) {
+    bullishScore += 2;
+    reason.push('RSI sobrevendido');
+  } else if (rsi > 60) {
+    bearishScore += 2;
+    reason.push('RSI sobrecomprado');
   }
 
-  // Sinal de VENDA
-  if (
-    rsi > 65 &&
-    macd.histogram < 0 &&
-    price < sma20 &&
-    prediction.direction === 'bearish' &&
-    confidence > 65
-  ) {
+  // Análise de MACD
+  if (macd.histogram > 0) {
+    bullishScore += 2;
+    reason.push('MACD positivo');
+  } else if (macd.histogram < 0) {
+    bearishScore += 2;
+    reason.push('MACD negativo');
+  }
+
+  // Análise de Bollinger Bands
+  if (price < bb.lower) {
+    bullishScore += 2;
+    reason.push('Preço abaixo Bollinger inferior');
+  } else if (price > bb.upper) {
+    bearishScore += 2;
+    reason.push('Preço acima Bollinger superior');
+  }
+
+  // Análise de Médias Móveis
+  if (sma20 > 0 && sma50 > 0) {
+    if (sma20 > sma50 && price > sma20) {
+      bullishScore += 1;
+      reason.push('Tendência de alta (SMA)');
+    } else if (sma20 < sma50 && price < sma20) {
+      bearishScore += 1;
+      reason.push('Tendência de baixa (SMA)');
+    }
+  }
+
+  // Análise de LSTM
+  if (prediction.direction === 'bullish') {
+    bullishScore += 2;
+    reason.push('IA prevê alta');
+  } else if (prediction.direction === 'bearish') {
+    bearishScore += 2;
+    reason.push('IA prevê baixa');
+  }
+
+  // Decisão de sinal (precisa de pelo menos 4 pontos e confiança > 60%)
+  if (bullishScore >= 4 && confidence > 60) {
+    signal = 'BUY';
+  } else if (bearishScore >= 4 && confidence > 60) {
     signal = 'SELL';
-    reason = [
-      'RSI sobrecomprado',
-      'MACD negativo',
-      'Abaixo SMA20',
-      'LSTM bearish',
-    ];
+  } else {
+    signal = 'HOLD';
+    reason = ['Sinais insuficientes ou baixa confiança'];
   }
 
   return {
