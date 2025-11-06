@@ -1,4 +1,4 @@
-// Integração com Bybit API
+// Integração com Bybit API V5
 
 import axios from 'axios';
 import crypto from 'crypto';
@@ -7,16 +7,24 @@ const BYBIT_API_URL = 'https://api.bybit.com';
 const API_KEY = process.env.BYBIT_API_KEY || '';
 const API_SECRET = process.env.BYBIT_API_SECRET || '';
 
-/**
- * Gera assinatura para requisições autenticadas
- */
-function generateSignature(params, timestamp) {
-  const queryString = Object.keys(params)
-    .sort()
-    .map((key) => `${key}=${params[key]}`)
-    .join('&');
+console.log('[Bybit] API Key configurada:', API_KEY ? 'Sim' : 'Não');
+console.log('[Bybit] API Secret configurada:', API_SECRET ? 'Sim' : 'Não');
 
-  const message = `${queryString}&timestamp=${timestamp}`;
+/**
+ * Gera assinatura para requisições autenticadas (Bybit V5)
+ */
+function generateSignature(timestamp, params) {
+  // Para GET: timestamp + apiKey + recvWindow + queryString
+  // Para POST: timestamp + apiKey + recvWindow + bodyString
+  const recvWindow = 5000;
+  
+  let paramStr = '';
+  if (params && Object.keys(params).length > 0) {
+    paramStr = JSON.stringify(params);
+  }
+  
+  const message = `${timestamp}${API_KEY}${recvWindow}${paramStr}`;
+  
   const signature = crypto
     .createHmac('sha256', API_SECRET)
     .update(message)
@@ -30,29 +38,33 @@ function generateSignature(params, timestamp) {
  */
 async function authenticatedRequest(method, path, params = {}) {
   try {
-    const timestamp = Date.now();
-    const signature = generateSignature(params, timestamp);
+    const timestamp = Date.now().toString();
+    const recvWindow = 5000;
+    
+    const signature = generateSignature(timestamp, params);
 
     const config = {
       method,
       url: `${BYBIT_API_URL}${path}`,
       headers: {
-        'X-BYBIT-API-KEY': API_KEY,
-        'X-BYBIT-TIMESTAMP': timestamp,
-        'X-BYBIT-SIGN': signature,
+        'X-BAPI-API-KEY': API_KEY,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+        'Content-Type': 'application/json',
       },
     };
 
     if (method === 'GET') {
-      config.params = { ...params, timestamp };
+      config.params = params;
     } else {
-      config.data = { ...params, timestamp };
+      config.data = params;
     }
 
     const response = await axios(config);
     return response.data;
   } catch (error) {
-    console.error('Bybit API Error:', error.message);
+    console.error('Bybit API Error:', error.response?.data || error.message);
     throw error;
   }
 }
@@ -242,18 +254,20 @@ export async function getOpenPositions() {
     });
 
     if (response.retCode === 0) {
-      return response.result.list.map((pos) => ({
-        symbol: pos.symbol,
-        side: pos.side,
-        size: parseFloat(pos.size),
-        entryPrice: parseFloat(pos.avgPrice),
-        currentPrice: parseFloat(pos.markPrice),
-        leverage: parseFloat(pos.leverage),
-        unrealizedPnl: parseFloat(pos.unrealisedPnl),
-        unrealizedPnlPercent: parseFloat(pos.unrealisedPnlPcnt) * 100,
-        stopLoss: pos.stopLoss ? parseFloat(pos.stopLoss) : null,
-        takeProfit: pos.takeProfit ? parseFloat(pos.takeProfit) : null,
-      }));
+      return response.result.list
+        .filter(pos => parseFloat(pos.size) > 0) // Filtra apenas posições abertas
+        .map((pos) => ({
+          symbol: pos.symbol,
+          side: pos.side,
+          size: parseFloat(pos.size),
+          entryPrice: parseFloat(pos.avgPrice),
+          currentPrice: parseFloat(pos.markPrice),
+          leverage: parseFloat(pos.leverage),
+          unrealizedPnl: parseFloat(pos.unrealisedPnl),
+          unrealizedPnlPercent: parseFloat(pos.unrealisedPnl) / parseFloat(pos.positionValue) * 100,
+          stopLoss: pos.stopLoss ? parseFloat(pos.stopLoss) : null,
+          takeProfit: pos.takeProfit ? parseFloat(pos.takeProfit) : null,
+        }));
     }
 
     return [];
@@ -284,7 +298,7 @@ export async function getTradeHistory(symbol = null, limit = 50) {
         orderId: trade.orderId,
         symbol: trade.symbol,
         side: trade.side,
-        size: parseFloat(trade.qty),
+        size: parseFloat(trade.execQty),
         price: parseFloat(trade.execPrice),
         fee: parseFloat(trade.execFee),
         timestamp: parseInt(trade.execTime),
