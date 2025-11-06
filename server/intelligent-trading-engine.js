@@ -445,6 +445,5 @@ export async function runIntelligentTradingCycle() {
   }
 }
 
-// Exportar estado e funções
-export { tradingState };
+// Exportar função principal
 export default runIntelligentTradingCycle;
