@@ -450,10 +450,24 @@ app.get('/api/credits/days-remaining/:currentCredits', authMiddleware, (req, res
 // ============================================
 
 /**
- * Serve frontend
+ * Serve frontend (sem autenticação)
  */
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+/**
+ * Servir arquivos estáticos públicos
+ */
+app.get('*', (req, res, next) => {
+  // Se não for uma rota de API, tenta servir arquivo estático
+  if (!req.path.startsWith('/api/')) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'), (err) => {
+      if (err) next();
+    });
+  } else {
+    next();
+  }
 });
 
 // ============================================
