@@ -457,9 +457,9 @@ async function getAllTrades(limit = 100) {
   const db = initDatabase();
   
   try {
+    // TiDB não aceita placeholder em LIMIT, usar valor direto
     const [rows] = await db.execute(
-      'SELECT * FROM trades ORDER BY entryTime DESC LIMIT ?',
-      [limit]
+      `SELECT * FROM trades ORDER BY entryTime DESC LIMIT ${parseInt(limit)}`
     );
     return rows;
   } catch (error) {
