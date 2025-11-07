@@ -159,10 +159,19 @@ export function hasAvailableBalance(totalBalance, usedBalance, requiredPercent) 
  * @returns {number}
  */
 export function calculateUsedBalance(openPositions) {
-  return openPositions.reduce((total, pos) => {
-    const positionValue = (pos.quantity * pos.entryPrice) / (pos.leverage || 1);
+  console.log(`[Risk] Calculando saldo usado de ${openPositions.length} posições abertas...`);
+  
+  const used = openPositions.reduce((total, pos) => {
+    const leverage = pos.leverage || 1;
+    const positionValue = (pos.quantity * pos.entryPrice) / leverage;
+    
+    console.log(`[Risk]   ${pos.symbol}: qty=${pos.quantity}, entry=${pos.entryPrice}, leverage=${leverage} → $${positionValue.toFixed(2)}`);
+    
     return total + positionValue;
   }, 0);
+  
+  console.log(`[Risk] Saldo total usado: $${used.toFixed(2)}`);
+  return used;
 }
 
 /**

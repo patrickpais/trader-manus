@@ -133,6 +133,12 @@ async function analyzeSymbol(symbol, parameters) {
 
     // Calcula alavancagem baseada em parâmetros aprendidos
     const leverage = calculateLeverage(signalData.confidence, parameters);
+    
+    // Força HOLD se confiança < threshold (leverage = 0)
+    const threshold = parameters.confidence_threshold || 70;
+    if (signalData.confidence < threshold || leverage === 0) {
+      return null; // Não retorna sinal (equivalente a HOLD)
+    }
 
     return {
       symbol,
