@@ -343,28 +343,10 @@ async function syncClosedTrades() {
             
             // Registra dados de saída no banco
             try {
-              // Busca indicadores de saída
-              let exitIndicators = {};
-              try {
-                const candles = await getHistoricalData(symbol, '5', 100);
-                if (candles && candles.length > 0) {
-                  const indicators = calculateIndicators(candles);
-                  const lastIdx = indicators.rsi.length - 1;
-                  exitIndicators = {
-                    exit_rsi: indicators.rsi[lastIdx],
-                    exit_macd: indicators.macd[lastIdx],
-                    exit_macd_signal: indicators.macd_signal[lastIdx],
-                    exit_volume_ratio: candles[candles.length - 1].volume / (candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20),
-                  };
-                }
-              } catch (err) {
-                console.error('[Sync] Erro ao buscar indicadores de saída:', err.message);
-              }
-              
               // Determina razão do fechamento baseado no PnL
               const exitReason = pnlPercent < -3 ? 'stop_loss' : pnlPercent > 10 ? 'take_profit' : 'manual';
               
-              tradeDB.updateTradeExit(
+              db.updateTradeExit(
                 openTrade.symbol,
                 new Date(openTrade.opened_at),
                 {
@@ -373,7 +355,6 @@ async function syncClosedTrades() {
                   pnl: totalPnl,
                   pnl_percent: pnlPercent,
                   duration_minutes: durationMinutes,
-                  ...exitIndicators,
                 }
               );
               console.log(`[Database] ✅ Dados de saída registrados para ${symbol} (sync)`);
@@ -443,23 +424,7 @@ async function monitorPositions(parameters) {
         // Determina razão do fechamento
         const exitReason = pnlPercent <= stopLossPercent ? 'stop_loss' : 'take_profit';
         
-        // Busca indicadores de saída antes de fechar
-        let exitIndicators = {};
-        try {
-          const candles = await getHistoricalData(pos.symbol, '5', 100);
-          if (candles && candles.length > 0) {
-            const indicators = calculateIndicators(candles);
-            const lastIdx = indicators.rsi.length - 1;
-            exitIndicators = {
-              exit_rsi: indicators.rsi[lastIdx],
-              exit_macd: indicators.macd[lastIdx],
-              exit_macd_signal: indicators.macd_signal[lastIdx],
-              exit_volume_ratio: candles[candles.length - 1].volume / (candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20),
-            };
-          }
-        } catch (err) {
-          console.error('[Trading] Erro ao buscar indicadores de saída:', err.message);
-        }
+        // Indicadores de saída serão buscados pelo ultra-algorithm quando necessário
         
         await closePosition(pos.symbol, pos.side);
 
@@ -485,7 +450,7 @@ async function monitorPositions(parameters) {
           
           // Registra dados de saída no banco
           try {
-            tradeDB.updateTradeExit(
+            db.updateTradeExit(
               openTrade.symbol,
               new Date(openTrade.opened_at),
               {
@@ -494,7 +459,6 @@ async function monitorPositions(parameters) {
                 pnl: pos.unrealizedPnl,
                 pnl_percent: pnlPercent,
                 duration_minutes: durationMinutes,
-                ...exitIndicators,
               }
             );
             console.log(`[Database] ✅ Dados de saída registrados para ${pos.symbol}`);
