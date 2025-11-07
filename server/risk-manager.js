@@ -30,8 +30,15 @@ const MIN_QUANTITIES = {
  * @param {number} leverage - Alavancagem
  * @returns {object} { riskPercent, quantity, estimatedCost }
  */
-export function calculateOptimalRisk(symbol, price, totalBalance, leverage = 1) {
+export function calculateOptimalRisk(symbol, price, totalBalance, leverage = 5) {
   // Validações de entrada
+  
+  // Valida leverage (deve ser >= 1)
+  if (!leverage || leverage <= 0 || !isFinite(leverage)) {
+    console.warn(`[Risk] Leverage inválido para ${symbol}: ${leverage}, usando padrão 5x`);
+    leverage = 5;
+  }
+  
   if (!price || price <= 0 || !isFinite(price)) {
     console.error(`[Risk] Preço inválido para ${symbol}: ${price}`);
     return {
