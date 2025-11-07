@@ -22,7 +22,7 @@ const performanceAnalyzer = new PerformanceAnalyzer();
 
 // Estado global do trading
 export const tradingState = {
-  isRunning: true, // Bot inicia automaticamente
+  isRunning: false, // Bot inicia quando usuário clicar em 'Iniciar'
   balance: 0,
   positions: [],
   trades: [],

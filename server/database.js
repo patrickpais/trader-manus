@@ -17,17 +17,14 @@ function initDatabase() {
   
   try {
     pool = mysql.createPool({
-      host: 'gateway02.us-east-1.prod.aws.tidbcloud.com',
-      port: 4000,
-      user: 'i4eWuXmqdJD31yc.root',
-      password: 'v4Q7qqU8oYA5g46PKkCW',
-      database: 'Cp5JEc3tFKKzfsKUJ75GgH',
+      host: process.env.DB_HOST || 'crypto_bot_db.mysql.dbaas.com.br',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.DB_USER || 'crypto_bot_db',
+      password: process.env.DB_PASSWORD || 'Gabi2205#',
+      database: process.env.DB_NAME || 'crypto_bot_db',
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0,
-      ssl: {
-        rejectUnauthorized: true
-      }
+      queueLimit: 0
     });
     
     console.log('[Database] Pool de conexões MySQL criado');

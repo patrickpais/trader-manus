@@ -165,6 +165,9 @@ app.post('/api/trading/start', authMiddleware, async (req, res) => {
     }
 
     startTrading();
+    
+    // Ativa o bot inteligente
+    intelligentState.isRunning = true;
 
     // Executa primeiro ciclo imediatamente com sistema inteligente
     await runIntelligentTradingCycle();
@@ -185,6 +188,9 @@ app.post('/api/trading/start', authMiddleware, async (req, res) => {
  */
 app.post('/api/trading/stop', authMiddleware, (req, res) => {
   stopTrading();
+  
+  // Desativa o bot inteligente
+  intelligentState.isRunning = false;
 
   res.json({
     message: 'Trading parado com sucesso',
@@ -500,6 +506,20 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.error('Erro ao inicializar tabela de usuários:', error);
   }
+  
+  // Ciclo automático de trading (5 minutos)
+  setInterval(async () => {
+    if (intelligentState.isRunning) {
+      try {
+        console.log('[Auto] Executando ciclo automático...');
+        await runIntelligentTradingCycle();
+      } catch (error) {
+        console.error('[Auto] Erro no ciclo automático:', error.message);
+      }
+    }
+  }, 5 * 60 * 1000); // 5 minutos
+  
+  console.log('⏰ Ciclo automático configurado (5 minutos)')
 
   console.log(`
 ╔════════════════════════════════════════╗
