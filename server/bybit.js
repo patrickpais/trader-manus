@@ -147,48 +147,50 @@ export async function getPrice(symbol) {
  * Busca saldo da conta
  */
 export async function getBalance() {
-  try {
-    console.log('[Bybit] Buscando saldo da conta UNIFIED...');
-    const response = await authenticatedRequest('GET', '/v5/account/wallet-balance', {
-      accountType: 'UNIFIED',
-    });
-
-    console.log('[Bybit] Resposta da API:', JSON.stringify(response, null, 2));
-
-    if (response.retCode === 0) {
-      if (!response.result || !response.result.list || response.result.list.length === 0) {
-        console.log('[Bybit] Nenhuma conta encontrada na resposta');
-        return {};
-      }
-
-      const coins = response.result.list[0].coin;
-      const balance = {};
-
-      console.log('[Bybit] Moedas encontradas:', coins.length);
-
-      coins.forEach((coin) => {
-        // availableToWithdraw pode estar vazio, usar walletBalance como fallback
-        const available = coin.availableToWithdraw && coin.availableToWithdraw !== '' 
-          ? parseFloat(coin.availableToWithdraw) 
-          : parseFloat(coin.walletBalance);
-        
-        balance[coin.coin] = {
-          available: available,
-          total: parseFloat(coin.walletBalance),
-          equity: parseFloat(coin.equity),
-        };
-        console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${available}`);
+  // Tentar UNIFIED primeiro, depois CONTRACT
+  const accountTypes = ['UNIFIED', 'CONTRACT'];
+  
+  for (const accountType of accountTypes) {
+    try {
+      console.log(`[Bybit] Buscando saldo da conta ${accountType}...`);
+      const response = await authenticatedRequest('GET', '/v5/account/wallet-balance', {
+        accountType,
       });
 
-      return balance;
-    }
+      console.log(`[Bybit] Resposta ${accountType}:`, JSON.stringify(response, null, 2));
 
-    console.log('[Bybit] Erro na resposta:', response.retMsg);
-    return {};
-  } catch (error) {
-    console.error('[Bybit] Error fetching balance:', error.response?.data || error.message);
-    return {};
+      if (response.retCode === 0 && response.result?.list?.length > 0) {
+        const coins = response.result.list[0].coin;
+        const balance = {};
+
+        console.log(`[Bybit] ${accountType}: ${coins.length} moedas encontradas`);
+
+        coins.forEach((coin) => {
+          // availableToWithdraw pode estar vazio, usar walletBalance como fallback
+          const available = coin.availableToWithdraw && coin.availableToWithdraw !== '' 
+            ? parseFloat(coin.availableToWithdraw) 
+            : parseFloat(coin.walletBalance);
+          
+          balance[coin.coin] = {
+            available: available,
+            total: parseFloat(coin.walletBalance),
+            equity: parseFloat(coin.equity || coin.walletBalance),
+          };
+          console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${available}`);
+        });
+
+        console.log(`[Bybit] ✅ Saldo obtido com sucesso (${accountType})`);
+        return balance;
+      }
+
+      console.log(`[Bybit] ${accountType}: Nenhuma conta encontrada`);
+    } catch (error) {
+      console.error(`[Bybit] Erro ao buscar ${accountType}:`, error.response?.data || error.message);
+    }
   }
+  
+  console.error('[Bybit] ❌ Não foi possível obter saldo de nenhuma conta');
+  return {};
 }
 
 /**
