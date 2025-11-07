@@ -675,7 +675,9 @@ export async function runIntelligentTradingCycle() {
     }
 
     // Seleciona trades baseado em gestão de risco inteligente
-    const validSignals = signals.filter(s => s.signal !== 'HOLD');
+    // Filtra HOLD e sinais com leverage inválido
+    const validSignals = signals.filter(s => s.signal !== 'HOLD' && s.leverage > 0);
+    console.log(`[Trading] Sinais válidos (não-HOLD com leverage > 0): ${validSignals.length}/${signals.length}`);
     const selectedTrades = selectTradesToExecute(
       validSignals,
       tradingState.balance,
