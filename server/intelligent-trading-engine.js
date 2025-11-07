@@ -674,8 +674,16 @@ export async function runIntelligentTradingCycle() {
       };
     }
 
+    // Corrige leverage inválido ANTES de filtrar
+    signals.forEach(s => {
+      if (s.signal !== 'HOLD' && (!s.leverage || s.leverage === 0)) {
+        console.warn(`[Trading] ⚠️ ${s.symbol}: Leverage inválido (${s.leverage}), corrigindo para 5x`);
+        s.leverage = 5; // Padrão seguro
+      }
+    });
+    
     // Seleciona trades baseado em gestão de risco inteligente
-    // Filtra HOLD e sinais com leverage inválido
+    // Filtra apenas HOLD (leverage já foi corrigido)
     const validSignals = signals.filter(s => s.signal !== 'HOLD' && s.leverage > 0);
     console.log(`[Trading] Sinais válidos (não-HOLD com leverage > 0): ${validSignals.length}/${signals.length}`);
     const selectedTrades = selectTradesToExecute(
