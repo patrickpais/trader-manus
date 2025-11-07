@@ -16,16 +16,28 @@ function initDatabase() {
   if (pool) return pool;
   
   try {
-    pool = mysql.createPool({
-      host: process.env.DB_HOST || 'crypto_bot_db.mysql.dbaas.com.br',
-      port: process.env.DB_PORT || 3306,
-      user: process.env.DB_USER || 'crypto_bot_db',
-      password: process.env.DB_PASSWORD || 'Gabi2205#',
-      database: process.env.DB_NAME || 'crypto_bot_db',
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0
-    });
+    // Usa DATABASE_URL do Manus se disponível, senão usa configuração manual
+    if (process.env.DATABASE_URL) {
+      pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+      });
+      console.log('[Database] Usando DATABASE_URL do Manus');
+    } else {
+      pool = mysql.createPool({
+        host: process.env.DB_HOST || 'crypto_bot_db.mysql.dbaas.com.br',
+        port: process.env.DB_PORT || 3306,
+        user: process.env.DB_USER || 'crypto_bot_db',
+        password: process.env.DB_PASSWORD || 'Gabi2205#',
+        database: process.env.DB_NAME || 'crypto_bot_db',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+      });
+      console.log('[Database] Usando configuração manual de DB');
+    }
     
     console.log('[Database] Pool de conexões MySQL criado');
     return pool;
