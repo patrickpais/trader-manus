@@ -83,11 +83,13 @@ function calculateLeverage(confidence, parameters) {
 
 /**
  * Calcula quantidade de moedas a operar (DEPRECATED - usar risk-manager)
- * Mantido para compatibilidade
+ * Mantido para compatibilidade - NÃO USAR MAIS
  */
 function calculateQuantity(balance, price, leverage, riskPercent = 2) {
-  const risk = calculateOptimalRisk(symbol, price, balance, leverage);
-  return risk.canTrade ? risk.quantity : 0;
+  // Função deprecated - quantidade agora vem do risk-manager
+  const riskAmount = balance * (riskPercent / 100);
+  const quantity = (riskAmount * leverage) / price;
+  return Math.max(quantity, 0.001);
 }
 
 /**
