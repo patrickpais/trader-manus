@@ -64,7 +64,14 @@ export function calculateOptimalRisk(symbol, price, totalBalance, leverage = 1) 
   const quantity = (riskAmount * leverage) / price;
   
   // Garante que atende quantidade mínima
-  const finalQuantity = Math.max(quantity, minQty);
+  let finalQuantity = Math.max(quantity, minQty);
+  
+  // Arredonda para precisão correta (Bybit aceita max 4 casas decimais)
+  // BTC, ETH: 0.001 = 3 casas
+  // Altcoins: 0.1, 1, 10 = 1 casa ou inteiro
+  const precision = minQty >= 1 ? 0 : minQty >= 0.1 ? 1 : minQty >= 0.01 ? 2 : minQty >= 0.001 ? 3 : 4;
+  finalQuantity = parseFloat(finalQuantity.toFixed(precision));
+  
   const finalCost = (finalQuantity * price) / leverage;
   const finalRiskPercent = (finalCost / totalBalance) * 100;
   
