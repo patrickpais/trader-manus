@@ -33,35 +33,36 @@ export const tradingState = {
 };
 
 // Carregar trades do banco de dados ao iniciar
-function loadTradesFromDB() {
+async function loadTradesFromDB() {
   try {
-    const closedTrades = db.getClosedTrades(100);
-    console.log(`[Database] ${closedTrades.length} trades carregados do banco de dados`);
+    const allTrades = await db.getAllTrades(100);
+    console.log(`[Database] ${allTrades.length} trades carregados do banco de dados`);
     
     // Converter para formato do tradingState
-    tradingState.trades = closedTrades.map(t => ({
+    tradingState.trades = allTrades.map(t => ({
       symbol: t.symbol,
       side: t.side,
-      entryPrice: t.entry_price,
-      exitPrice: t.exit_price,
-      quantity: t.quantity,
-      leverage: t.leverage,
-      stopLoss: t.stop_loss,
-      takeProfit: t.take_profit,
-      pnl: t.pnl,
-      pnlPercent: t.pnl_percent,
-      opened_at: t.entry_time,
-      closed_at: t.exit_time,
+      entryPrice: parseFloat(t.entryPrice) || 0,
+      exitPrice: parseFloat(t.exitPrice) || 0,
+      quantity: parseFloat(t.quantity) || 0,
+      leverage: t.leverage || 0,
+      stopLoss: 0,
+      takeProfit: 0,
+      pnl: parseFloat(t.profit) || 0,
+      pnlPercent: parseFloat(t.profitPercent) || 0,
+      opened_at: t.entryTime,
+      closed_at: t.exitTime,
       status: t.status,
-      dbId: t.id // Manter referência ao ID do banco
+      dbId: t.id
     }));
   } catch (error) {
     console.error('[Database] Erro ao carregar trades:', error);
+    tradingState.trades = [];
   }
 }
 
-// Carregar trades ao iniciar
-loadTradesFromDB();
+// Carregar trades ao iniciar (async)
+loadTradesFromDB().catch(err => console.error('[Database] Erro ao inicializar:', err));
 
 // Contador de ciclos
 let cycleCount = 0;
