@@ -143,53 +143,88 @@ export async function getPrice(symbol) {
   }
 }
 
+// Cache de saldo (para usar quando API falhar)
+let cachedBalance = null;
+let lastBalanceUpdate = null;
+
 /**
- * Busca saldo da conta
+ * Busca saldo da conta com retry e cache
  */
-export async function getBalance() {
+export async function getBalance(useCache = true) {
   // Tentar UNIFIED primeiro, depois CONTRACT
   const accountTypes = ['UNIFIED', 'CONTRACT'];
+  const maxRetries = 2;
   
   for (const accountType of accountTypes) {
-    try {
-      console.log(`[Bybit] Buscando saldo da conta ${accountType}...`);
-      const response = await authenticatedRequest('GET', '/v5/account/wallet-balance', {
-        accountType,
-      });
-
-      console.log(`[Bybit] Resposta ${accountType}:`, JSON.stringify(response, null, 2));
-
-      if (response.retCode === 0 && response.result?.list?.length > 0) {
-        const coins = response.result.list[0].coin;
-        const balance = {};
-
-        console.log(`[Bybit] ${accountType}: ${coins.length} moedas encontradas`);
-
-        coins.forEach((coin) => {
-          // availableToWithdraw pode estar vazio, usar walletBalance como fallback
-          const available = coin.availableToWithdraw && coin.availableToWithdraw !== '' 
-            ? parseFloat(coin.availableToWithdraw) 
-            : parseFloat(coin.walletBalance);
-          
-          balance[coin.coin] = {
-            available: available,
-            total: parseFloat(coin.walletBalance),
-            equity: parseFloat(coin.equity || coin.walletBalance),
-          };
-          console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${available}`);
+    for (let retry = 0; retry <= maxRetries; retry++) {
+      try {
+        if (retry > 0) {
+          const delay = retry * 1000; // 1s, 2s
+          console.log(`[Bybit] Aguardando ${delay}ms antes de retry ${retry}/${maxRetries}...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        console.log(`[Bybit] Buscando saldo da conta ${accountType}... (tentativa ${retry + 1}/${maxRetries + 1})`);
+        const response = await authenticatedRequest('GET', '/v5/account/wallet-balance', {
+          accountType,
         });
 
-        console.log(`[Bybit] ✅ Saldo obtido com sucesso (${accountType})`);
-        return balance;
-      }
+        console.log(`[Bybit] Resposta ${accountType}:`, JSON.stringify(response, null, 2));
 
-      console.log(`[Bybit] ${accountType}: Nenhuma conta encontrada`);
-    } catch (error) {
-      console.error(`[Bybit] Erro ao buscar ${accountType}:`, error.response?.data || error.message);
+        if (response.retCode === 0 && response.result?.list?.length > 0) {
+          const coins = response.result.list[0].coin;
+          const balance = {};
+
+          console.log(`[Bybit] ${accountType}: ${coins.length} moedas encontradas`);
+
+          coins.forEach((coin) => {
+            // availableToWithdraw pode estar vazio, usar walletBalance como fallback
+            const available = coin.availableToWithdraw && coin.availableToWithdraw !== '' 
+              ? parseFloat(coin.availableToWithdraw) 
+              : parseFloat(coin.walletBalance);
+            
+            balance[coin.coin] = {
+              available: available,
+              total: parseFloat(coin.walletBalance),
+              equity: parseFloat(coin.equity || coin.walletBalance),
+            };
+            console.log(`[Bybit] ${coin.coin}: Total=${coin.walletBalance}, Disponível=${available}`);
+          });
+
+          console.log(`[Bybit] ✅ Saldo obtido com sucesso (${accountType})`);
+          
+          // Atualiza cache
+          cachedBalance = balance;
+          lastBalanceUpdate = new Date();
+          
+          return balance;
+        }
+
+        console.log(`[Bybit] ${accountType}: Nenhuma conta encontrada`);
+        break; // Não precisa retry se não tem conta
+        
+      } catch (error) {
+        const errorMsg = error.response?.data?.retMsg || error.message;
+        const errorCode = error.response?.status;
+        
+        console.error(`[Bybit] Erro ao buscar ${accountType} (tentativa ${retry + 1}): ${errorCode} - ${errorMsg}`);
+        
+        // Se for erro 403 ou última tentativa, não faz retry
+        if (errorCode === 403 || retry === maxRetries) {
+          break;
+        }
+      }
     }
   }
   
-  console.error('[Bybit] ❌ Não foi possível obter saldo de nenhuma conta');
+  // Se falhou e tem cache, usa cache
+  if (useCache && cachedBalance) {
+    const cacheAge = lastBalanceUpdate ? Math.floor((Date.now() - lastBalanceUpdate.getTime()) / 1000) : 'desconhecido';
+    console.warn(`[Bybit] ⚠️ Usando saldo em cache (${cacheAge}s atrás)`);
+    return cachedBalance;
+  }
+  
+  console.error('[Bybit] ❌ Não foi possível obter saldo e não há cache disponível');
   return {};
 }
 
