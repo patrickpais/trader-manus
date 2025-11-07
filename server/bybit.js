@@ -327,7 +327,7 @@ export async function getOpenPositions() {
         .map((pos) => ({
           symbol: pos.symbol,
           side: pos.side,
-          size: parseFloat(pos.size),
+          quantity: parseFloat(pos.size), // Renomeado de 'size' para 'quantity'
           entryPrice: parseFloat(pos.avgPrice),
           currentPrice: parseFloat(pos.markPrice),
           leverage: parseFloat(pos.leverage),
