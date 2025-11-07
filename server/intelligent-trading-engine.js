@@ -223,8 +223,12 @@ async function executeTrade(signal, balance, parameters) {
       };
       
       // Salvar no banco de dados
-      const tradeId = db.createTrade(tradeData);
-      console.log(`[Database] Trade criado com ID: ${tradeId}`);
+      try {
+        const tradeId = await db.insertTrade(tradeData);
+        console.log(`[Database] ✅ Trade criado com ID: ${tradeId}`);
+      } catch (dbErr) {
+        console.error('[Database] Erro ao criar trade:', dbErr.message);
+      }
       
       // Criar objeto para tradingState (compatibilidade)
       const trade = {
