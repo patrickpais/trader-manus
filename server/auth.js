@@ -18,9 +18,7 @@ async function initializePool() {
         database: 'crypto_bot_db',
         waitForConnections: true,
         connectionLimit: 10,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelayMs: 0
+        queueLimit: 0
       });
       
       console.log('[Auth] Pool de conexão inicializado com Locaweb');
