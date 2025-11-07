@@ -14,6 +14,7 @@ import { generateUltraTradingSignal, calculateUltraSLTP } from './ultra-algorith
 import * as db from './database.js';
 import { SystemDiagnostics } from './system-diagnostics.js';
 import { PerformanceAnalyzer } from './performance-analyzer.js';
+import { selectTradesToExecute, calculateOptimalRisk } from './risk-manager.js';
 
 // Instâncias dos sistemas
 const diagnostics = new SystemDiagnostics();
@@ -81,12 +82,12 @@ function calculateLeverage(confidence, parameters) {
 }
 
 /**
- * Calcula quantidade de moedas a operar
+ * Calcula quantidade de moedas a operar (DEPRECATED - usar risk-manager)
+ * Mantido para compatibilidade
  */
 function calculateQuantity(balance, price, leverage, riskPercent = 2) {
-  const riskAmount = balance * (riskPercent / 100);
-  const quantity = (riskAmount * leverage) / price;
-  return Math.max(quantity, 0.001); // Mínimo 0.001
+  const risk = calculateOptimalRisk(symbol, price, balance, leverage);
+  return risk.canTrade ? risk.quantity : 0;
 }
 
 /**
@@ -156,9 +157,13 @@ async function executeTrade(signal, balance, parameters) {
       return null;
     }
 
-    // Calcula quantidade
-    const riskPercent = parameters.risk_per_trade || 15;
-    const quantity = calculateQuantity(balance, signal.price, signal.leverage, riskPercent);
+    // Usa quantidade já calculada pelo risk-manager
+    const quantity = signal.quantity || 0;
+    
+    if (quantity === 0) {
+      console.log(`[Trading] ❌ ${signal.symbol}: Quantidade inválida`);
+      return null;
+    }
 
     // Calcula SL e TP
     const side = signal.signal === 'BUY' ? 'Buy' : 'Sell';
@@ -698,14 +703,27 @@ export async function runIntelligentTradingCycle() {
       };
     }
 
-    // Executa trades com sinal BUY/SELL
+    // Seleciona trades baseado em gestão de risco inteligente
+    const validSignals = signals.filter(s => s.signal !== 'HOLD');
+    const selectedTrades = selectTradesToExecute(
+      validSignals,
+      tradingState.balance,
+      tradingState.positions
+    );
+    
+    console.log(`[Trading] Trades selecionados para execução: ${selectedTrades.length}`);
+    
+    // Executa trades selecionados
     let tradesExecuted = 0;
-    for (const signal of signals) {
-      if (signal.signal !== 'HOLD' && todayTrades + tradesExecuted < maxTradesPerDay) {
+    for (const signal of selectedTrades) {
+      if (todayTrades + tradesExecuted < maxTradesPerDay) {
         const trade = await executeTrade(signal, tradingState.balance, parameters);
         if (trade) {
           tradesExecuted++;
         }
+      } else {
+        console.log(`[Trading] ⚠️ Limite diário atingido durante execução`);
+        break;
       }
     }
 
