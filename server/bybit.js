@@ -220,8 +220,11 @@ export async function openPosition(symbol, side, quantity, leverage, stopLoss, t
     }
 
     const response = await authenticatedRequest('POST', '/v5/order/create', params);
+    
+    console.log('[Bybit] Resposta completa da abertura:', JSON.stringify(response, null, 2));
 
     if (response.retCode === 0) {
+      console.log(`[Bybit] ✅ ORDEM CRIADA: ${response.result.orderId}`);
       return {
         orderId: response.result.orderId,
         symbol,
@@ -232,7 +235,7 @@ export async function openPosition(symbol, side, quantity, leverage, stopLoss, t
       };
     }
 
-    console.error('Error opening position:', response.retMsg);
+    console.error(`[Bybit] ❌ ERRO ao abrir posição: ${response.retMsg} (code: ${response.retCode})`);
     return null;
   } catch (error) {
     console.error('Error opening position:', error.message);

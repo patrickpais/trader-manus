@@ -252,30 +252,36 @@ app.get('/api/signals', authMiddleware, (req, res) => {
  * Dashboard data
  */
 app.get('/api/dashboard', authMiddleware, (req, res) => {
-  const status = getStatus();
+  try {
+    // Usar intelligentState ao invés de getStatus()
+    const state = intelligentState;
 
-  // Calcula estatísticas
-  const totalTrades = status.trades.length;
-  const winTrades = status.trades.filter((t) => t.pnl > 0).length;
-  const lossTrades = status.trades.filter((t) => t.pnl < 0).length;
-  const totalPnl = status.trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-  const winRate = totalTrades > 0 ? ((winTrades / totalTrades) * 100).toFixed(1) : 0;
+    // Calcula estatísticas
+    const totalTrades = state.trades.length;
+    const winTrades = state.trades.filter((t) => t.pnl > 0).length;
+    const lossTrades = state.trades.filter((t) => t.pnl < 0).length;
+    const totalPnl = state.trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    const winRate = totalTrades > 0 ? ((winTrades / totalTrades) * 100).toFixed(1) : 0;
 
-  res.json({
-    balance: status.balance,
-    positions: status.positions.length,
-    openPositions: status.positions,
-    trades: {
-      total: totalTrades,
-      wins: winTrades,
-      losses: lossTrades,
-      winRate: parseFloat(winRate),
-      totalPnl: parseFloat(totalPnl.toFixed(2)),
-    },
-    signals: status.signals,
-    isRunning: status.isRunning,
-    lastUpdate: status.lastUpdate,
-  });
+    res.json({
+      balance: state.balance,
+      positions: state.positions.length,
+      openPositions: state.positions,
+      trades: {
+        total: totalTrades,
+        wins: winTrades,
+        losses: lossTrades,
+        winRate: parseFloat(winRate),
+        totalPnl: parseFloat(totalPnl.toFixed(2)),
+      },
+      signals: state.signals,
+      isRunning: state.isRunning,
+      lastUpdate: state.lastUpdate,
+    });
+  } catch (error) {
+    console.error('[Dashboard] Erro ao buscar dados:', error);
+    res.status(500).json({ error: 'Erro ao buscar dados do dashboard' });
+  }
 });
 
 // ============================================
