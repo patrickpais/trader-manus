@@ -31,13 +31,60 @@ const MIN_QUANTITIES = {
  * @returns {object} { riskPercent, quantity, estimatedCost }
  */
 export function calculateOptimalRisk(symbol, price, totalBalance, leverage = 1) {
+  // Validações de entrada
+  if (!price || price <= 0 || !isFinite(price)) {
+    console.error(`[Risk] Preço inválido para ${symbol}: ${price}`);
+    return {
+      canTrade: false,
+      reason: `Preço inválido: ${price}`,
+      riskPercent: 0,
+      quantity: 0,
+      estimatedCost: 0
+    };
+  }
+  
+  if (!totalBalance || totalBalance <= 0 || !isFinite(totalBalance)) {
+    console.error(`[Risk] Saldo inválido: ${totalBalance}`);
+    return {
+      canTrade: false,
+      reason: `Saldo inválido: ${totalBalance}`,
+      riskPercent: 0,
+      quantity: 0,
+      estimatedCost: 0
+    };
+  }
+  
   const minQty = MIN_QUANTITIES[symbol] || 0.001;
+  
+  if (!isFinite(minQty) || minQty <= 0) {
+    console.error(`[Risk] Quantidade mínima inválida para ${symbol}: ${minQty}`);
+    return {
+      canTrade: false,
+      reason: `Quantidade mínima inválida`,
+      riskPercent: 0,
+      quantity: 0,
+      estimatedCost: 0
+    };
+  }
   
   // Calcula custo mínimo (quantidade mínima / alavancagem)
   const minCost = (minQty * price) / leverage;
   
   // Calcula percentual mínimo necessário
   const minRiskPercent = (minCost / totalBalance) * 100;
+  
+  // Valida resultado
+  if (!isFinite(minRiskPercent)) {
+    console.error(`[Risk] Cálculo resultou em Infinity/NaN para ${symbol}`);
+    console.error(`[Risk] minQty=${minQty}, price=${price}, totalBalance=${totalBalance}, leverage=${leverage}`);
+    return {
+      canTrade: false,
+      reason: `Erro no cálculo de risco`,
+      riskPercent: 0,
+      quantity: 0,
+      estimatedCost: 0
+    };
+  }
   
   // Define percentual ideal (entre 5% e 20%)
   let optimalRiskPercent;
