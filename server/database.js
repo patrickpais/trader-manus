@@ -458,7 +458,7 @@ async function getAllTrades(limit = 100) {
   
   try {
     const [rows] = await db.execute(
-      'SELECT * FROM trades ORDER BY opened_at DESC LIMIT ?',
+      'SELECT * FROM trades ORDER BY entryTime DESC LIMIT ?',
       [limit]
     );
     return rows;
