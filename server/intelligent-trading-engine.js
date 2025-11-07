@@ -339,7 +339,7 @@ async function syncClosedTrades() {
               closed_at: closedAt.toISOString(),
               status: 'closed',
             };
-            saveState(); // Salva estado após atualizar trade
+            // Estado salvo automaticamente no banco de dados
             
             // Registra dados de saída no banco
             try {
@@ -383,7 +383,7 @@ async function syncClosedTrades() {
               closed_at: new Date(exitTrade.timestamp).toISOString(),
               status: 'closed',
             });
-            saveState(); // Salva estado após adicionar trade do histórico
+            // Estado salvo automaticamente no banco de dados
             
             console.log(`[Trading] ✅ Trade recuperado do histórico: ${symbol} - PnL: $${totalPnl.toFixed(2)}`);
           }
@@ -446,7 +446,7 @@ async function monitorPositions(parameters) {
             closed_at: closedAt.toISOString(),
             status: 'closed',
           };
-          saveState(); // Salva estado após fechar trade
+          // Estado salvo automaticamente no banco de dados
           
           // Registra dados de saída no banco
           try {
