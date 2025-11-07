@@ -132,9 +132,18 @@ export function selectTradesToExecute(signals, totalBalance, openPositions) {
   const prioritized = prioritizeSignals(signals);
   const selected = [];
   
+  // Lista de símbolos que já têm posição aberta
+  const openSymbols = openPositions.map(pos => pos.symbol);
+  
   let currentUsed = usedBalance;
   
   for (const signal of prioritized) {
+    // FILTRO: Pula se já tem posição aberta nessa moeda
+    if (openSymbols.includes(signal.symbol)) {
+      console.log(`[Risk] ⏭️  ${signal.symbol}: Já existe posição aberta (pulando)`);
+      continue;
+    }
+    
     const risk = calculateOptimalRisk(
       signal.symbol,
       signal.price,
